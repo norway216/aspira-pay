@@ -8,11 +8,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/aspira/aspira-pay/internal/middleware"
+	"github.com/aspira/aspira-pay/internal/repository"
 	"github.com/aspira/aspira-pay/internal/service"
 )
 
 // RouterConfig holds all dependencies for the HTTP router.
 type RouterConfig struct {
+	DB            *repository.DB
 	UserSvc       *service.UserService
 	KYCSvc        *service.KYCService
 	RiskSvc       *service.RiskService
@@ -94,6 +96,10 @@ func SetupRouter(cfg *RouterConfig) *gin.Engine {
 			protected.GET("/chain/blocks", chainH.ListBlocks)
 			protected.GET("/chain/blocks/:height", chainH.GetBlock)
 			protected.GET("/chain/audit/:payment_id", chainH.GetAuditTrail)
+
+			// Accounts (with FX conversion to user preferred currency)
+			acctH := NewAccountHandler(cfg.DB, cfg.FXSvc)
+			protected.GET("/accounts", acctH.GetMyAccounts)
 
 			// Admin Dashboard
 			adminH := NewAdminHandler(cfg.PaymentSvc, cfg.UserSvc, cfg.SettlementSvc)

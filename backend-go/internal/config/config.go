@@ -83,6 +83,7 @@ type AuthConfig struct {
 type FXConfig struct {
 	RefreshInterval time.Duration `yaml:"refresh_interval" default:"60s"`
 	QuoteTTL        int64         `yaml:"quote_ttl" default:"120"` // seconds
+	APIURL          string        `yaml:"api_url" default:"https://api.frankfurter.app/latest?from=USD"`
 }
 
 // ChainConfig configures the blockchain audit layer.
@@ -206,6 +207,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.FX.QuoteTTL == 0 {
 		c.FX.QuoteTTL = 120
+	}
+	if c.FX.APIURL == "" {
+		c.FX.APIURL = "https://api.frankfurter.app/latest?from=USD"
 	}
 	if c.Chain.BatchSize == 0 {
 		c.Chain.BatchSize = 100

@@ -56,14 +56,20 @@ func (s *UserService) Register(req user.RegisterRequest) (*user.User, error) {
 	// Hash password using Argon2id
 	passwordHash := s.hashPassword(req.Password)
 
+	currency := req.DefaultCurrency
+	if currency == "" {
+		currency = "USD"
+	}
+
 	u := &user.User{
-		UserID:       idgen.UserID(),
-		Username:     req.Username,
-		Email:        req.Email,
-		PasswordHash: passwordHash,
-		Phone:        req.Phone,
-		Status:       user.UserPendingKYC,
-		RiskLevel:    "LOW",
+		UserID:          idgen.UserID(),
+		Username:        req.Username,
+		Email:           req.Email,
+		PasswordHash:    passwordHash,
+		Phone:           req.Phone,
+		Status:          user.UserPendingKYC,
+		RiskLevel:       "LOW",
+		DefaultCurrency: currency,
 	}
 
 	if err := s.db.CreateUser(u); err != nil {

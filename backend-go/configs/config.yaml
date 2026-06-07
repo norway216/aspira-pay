@@ -37,6 +37,7 @@ auth:
 fx:
   refresh_interval: 60s
   quote_ttl: 120
+  api_url: "https://api.frankfurter.app/latest?from=USD"
 
 chain:
   enabled: true
