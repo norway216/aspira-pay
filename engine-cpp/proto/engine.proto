@@ -1,0 +1,101 @@
+// Aspira Pay V2 — Engine gRPC Protocol Definition
+// Defines the interface between Go API and C++ Engine.
+// Architecture doc §4.7
+
+syntax = "proto3";
+
+package aspira.engine.v2;
+
+option go_package = "github.com/aspira/aspira-pay/proto/engine";
+
+// PaymentEngine is the C++ trading & clearing engine service.
+service PaymentEngine {
+    // SubmitCommand sends a payment command to the engine.
+    rpc SubmitCommand(CommandRequest) returns (CommandResponse);
+
+    // GetBalance queries an account's balance from the in-memory ledger.
+    rpc GetBalance(BalanceRequest) returns (BalanceResponse);
+
+    // StreamEvents establishes a stream for receiving engine events.
+    rpc StreamEvents(EventStreamRequest) returns (stream EngineEvent);
+
+    // HealthCheck verifies the engine is running.
+    rpc HealthCheck(HealthRequest) returns (HealthResponse);
+}
+
+// Command types
+enum CommandType {
+    COMMAND_UNSPECIFIED = 0;
+    FREEZE_FUNDS = 1;
+    EXECUTE_PAYMENT = 2;
+    RELEASE_FUNDS = 3;
+    REFUND_PAYMENT = 4;
+    SETTLEMENT_BATCH = 5;
+}
+
+// Engine results
+enum EngineResult {
+    RESULT_UNSPECIFIED = 0;
+    ACCEPTED = 1;
+    REJECTED = 2;
+    EXECUTED = 3;
+    DUPLICATED = 4;
+    INSUFFICIENT_FUNDS = 5;
+}
+
+message CommandRequest {
+    uint64 sequence_id = 1;
+    string request_id = 2;
+    string payment_id = 3;
+    CommandType command_type = 4;
+    string from_account = 5;
+    string to_account = 6;
+    string source_currency = 7;
+    string target_currency = 8;
+    int64 source_amount = 9;
+    int64 target_amount = 10;
+    int64 fee_amount = 11;
+    int64 timestamp = 12;
+}
+
+message CommandResponse {
+    uint64 sequence_id = 1;
+    string event_id = 2;
+    string payment_id = 3;
+    EngineResult result = 4;
+    string message = 5;
+    int64 timestamp = 6;
+}
+
+message BalanceRequest {
+    string account_id = 1;
+}
+
+message BalanceResponse {
+    string account_id = 1;
+    int64 available = 2;
+    int64 frozen = 3;
+    int64 settled = 4;
+}
+
+message EngineEvent {
+    uint64 sequence_id = 1;
+    string event_id = 2;
+    string payment_id = 3;
+    string event_type = 4;
+    string result = 5;
+    int64 timestamp = 6;
+}
+
+message EventStreamRequest {
+    repeated string event_types = 1; // Filter by event types
+}
+
+message HealthRequest {}
+
+message HealthResponse {
+    bool healthy = 1;
+    uint64 commands_processed = 2;
+    uint64 commands_rejected = 3;
+    uint64 uptime_seconds = 4;
+}

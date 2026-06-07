@@ -1,0 +1,45 @@
+# Aspira Pay V2 — Default Configuration (Sandbox)
+server:
+  port: 8080
+  mode: debug
+  read_timeout: 30s
+  write_timeout: 30s
+
+database:
+  host: localhost
+  port: 5432
+  user: aspirapay
+  password: aspirapay_secret
+  dbname: aspirapay
+  ssl_mode: disable
+  max_conns: 25
+
+redis:
+  addr: localhost:6379
+  password: ""
+  db: 0
+
+nats:
+  url: nats://localhost:4222
+  stream: aspira_events
+  enabled: true
+
+engine:
+  addr: localhost:9090
+  enabled: true
+  timeout: 5s
+
+auth:
+  jwt_secret: "change-me-in-production-use-a-strong-random-secret"
+  token_expiry: 1h
+  refresh_expiry: 24h
+
+fx:
+  refresh_interval: 60s
+  quote_ttl: 120
+
+chain:
+  enabled: true
+  mode: hash_chain
+  batch_size: 100
+  batch_interval_sec: 30

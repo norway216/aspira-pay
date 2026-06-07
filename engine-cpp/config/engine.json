@@ -1,0 +1,29 @@
+{
+  "engine": {
+    "wal_path": "engine.wal",
+    "queue_capacity": 4096,
+    "batch_size": 64,
+    "snapshot_interval_sec": 300,
+    "listen_addr": "0.0.0.0:9090"
+  },
+  "ledger": {
+    "initial_accounts": {
+      "acc_test_sender_usd": 10000000,
+      "acc_test_sender_eur": 5000000,
+      "acc_test_receiver_jpy": 0,
+      "acc_test_receiver_usd": 0,
+      "sys_fee_income_usd": 0,
+      "sys_fee_income_eur": 0,
+      "sys_fee_income_jpy": 0,
+      "sys_fee_income_cny": 0,
+      "sys_settlement_usd": 0,
+      "sys_settlement_eur": 0,
+      "sys_settlement_jpy": 0,
+      "sys_settlement_cny": 0
+    }
+  },
+  "publisher": {
+    "enabled": true,
+    "type": "stdout"
+  }
+}

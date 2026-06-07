@@ -1,0 +1,24 @@
+# Aspira Pay V2 — Go API Server Dockerfile
+# Multi-stage build for minimal image
+
+FROM golang:1.22-alpine AS builder
+
+RUN apk add --no-cache git ca-certificates
+
+WORKDIR /app
+COPY backend-go/go.mod backend-go/go.sum ./
+RUN go mod download
+
+COPY backend-go/ ./
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /aspira-api ./cmd/server/main.go
+
+FROM alpine:3.20
+RUN apk add --no-cache ca-certificates wget
+WORKDIR /app
+
+COPY --from=builder /aspira-api .
+COPY backend-go/configs/ ./configs/
+
+EXPOSE 8080
+
+CMD ["./aspira-api", "configs/config.yaml"]

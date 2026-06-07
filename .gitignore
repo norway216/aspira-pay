@@ -1,0 +1,46 @@
+# ===== Logs =====
+logs/
+*.log
+
+# ===== Compiled Executables =====
+# Go binaries
+backend-go/aspira-api
+backend-go/aspira-stress-test
+
+# C++ build directory (intermediates + engine binary)
+engine-cpp/build/
+
+# General executables
+*.exe
+*.out
+
+# ===== Compiled Intermediate Files =====
+*.o
+*.obj
+*.a
+*.so
+*.dylib
+*.dll
+
+# ===== Frontend =====
+web-admin/dist/
+web-admin/node_modules/
+
+# ===== Environment & Secrets =====
+.env
+.env.*
+!.env.example
+
+# ===== IDE & Editor =====
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ===== Claude Code =====
+.claude/
+
+# ===== OS Files =====
+Thumbs.db

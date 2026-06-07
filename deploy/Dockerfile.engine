@@ -1,0 +1,31 @@
+# Aspira Pay V2 — C++ Engine Dockerfile
+# Multi-stage build for optimized binary
+
+FROM alpine:3.20 AS builder
+
+RUN apk add --no-cache \
+    cmake make g++ linux-headers \
+    openssl-dev openssl-libs
+
+WORKDIR /app
+COPY engine-cpp/ .
+
+RUN mkdir build && cd build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release && \
+    make -j$(nproc) && \
+    cp aspira_engine /aspira_engine
+
+FROM alpine:3.20
+RUN apk add --no-cache libstdc++ openssl
+WORKDIR /app
+
+COPY --from=builder /aspira_engine .
+COPY engine-cpp/config/ ./config/
+
+RUN mkdir -p /data
+VOLUME /data
+ENV ENGINE_WAL_PATH=/data/engine.wal
+
+EXPOSE 9090
+
+CMD ["./aspira_engine", "/data/engine.wal"]
