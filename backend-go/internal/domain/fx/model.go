@@ -73,11 +73,41 @@ func DefaultRates() map[string]string {
 // FeeBasisPoints returns the fee in basis points for a given currency pair.
 // Default is 100 bps = 1%.
 func FeeBasisPoints(source, target string) int64 {
-	// Cross-currency pairs have higher fees
 	if source != target {
 		return 100 // 1%
 	}
-	return 50 // 0.5% for same-currency (rare)
+	return 50 // 0.5%
+}
+
+// FeeBasisPointsUSD returns the fee for USD-based settlement.
+// All transactions settle in USD, so fee is calculated on USD equivalent.
+func FeeBasisPointsUSD() int64 {
+	return 100 // 1% fee on USD settlement amount
+}
+
+// DefaultUSDRates returns fallback USD-based rates (XXX per 1 USD).
+// Used when live API is unavailable.
+func DefaultUSDRates() map[string]string {
+	return map[string]string{
+		"JPY": "156.000000000000",
+		"EUR": "0.920000000000",
+		"CNY": "7.250000000000",
+		"GBP": "0.790000000000",
+		"AUD": "1.520000000000",
+		"CAD": "1.360000000000",
+		"CHF": "0.890000000000",
+		"HKD": "7.810000000000",
+		"SGD": "1.340000000000",
+		"KRW": "1320.000000000000",
+		"INR": "83.000000000000",
+		"MXN": "17.500000000000",
+		"BRL": "5.100000000000",
+	}
+}
+
+// Supported currencies list
+var SupportedCurrencies = []string{
+	"USD", "EUR", "GBP", "JPY", "CNY", "AUD", "CAD", "CHF", "HKD", "SGD",
 }
 
 // QuoteTTLSeconds is the default quote validity period.

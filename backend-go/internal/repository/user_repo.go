@@ -10,23 +10,26 @@ import (
 // CreateUser inserts a new user record.
 func (db *DB) CreateUser(u *user.User) error {
 	query := `
-		INSERT INTO users (user_id, username, email, password_hash, phone, status, risk_level)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO users (user_id, username, email, password_hash, phone, status, risk_level, default_currency)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id, created_at, updated_at`
+	if u.DefaultCurrency == "" {
+		u.DefaultCurrency = "USD"
+	}
 	return db.QueryRow(query,
 		u.UserID, u.Username, u.Email, u.PasswordHash, u.Phone,
-		u.Status, u.RiskLevel,
+		u.Status, u.RiskLevel, u.DefaultCurrency,
 	).Scan(&u.ID, &u.CreatedAt, &u.UpdatedAt)
 }
 
 // GetUserByID retrieves a user by user_id.
 func (db *DB) GetUserByID(userID string) (*user.User, error) {
 	u := &user.User{}
-	query := `SELECT id, user_id, username, email, password_hash, phone, status, risk_level, created_at, updated_at
+	query := `SELECT id, user_id, username, email, password_hash, phone, status, risk_level, COALESCE(default_currency,'USD'), created_at, updated_at
 		FROM users WHERE user_id = $1`
 	err := db.QueryRow(query, userID).Scan(
 		&u.ID, &u.UserID, &u.Username, &u.Email, &u.PasswordHash, &u.Phone,
-		&u.Status, &u.RiskLevel, &u.CreatedAt, &u.UpdatedAt,
+		&u.Status, &u.RiskLevel, &u.DefaultCurrency, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("user not found: %s", userID)
@@ -37,11 +40,11 @@ func (db *DB) GetUserByID(userID string) (*user.User, error) {
 // GetUserByUsername retrieves a user by username.
 func (db *DB) GetUserByUsername(username string) (*user.User, error) {
 	u := &user.User{}
-	query := `SELECT id, user_id, username, email, password_hash, phone, status, risk_level, created_at, updated_at
+	query := `SELECT id, user_id, username, email, password_hash, phone, status, risk_level, COALESCE(default_currency,'USD'), created_at, updated_at
 		FROM users WHERE username = $1`
 	err := db.QueryRow(query, username).Scan(
 		&u.ID, &u.UserID, &u.Username, &u.Email, &u.PasswordHash, &u.Phone,
-		&u.Status, &u.RiskLevel, &u.CreatedAt, &u.UpdatedAt,
+		&u.Status, &u.RiskLevel, &u.DefaultCurrency, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("user not found: %s", username)
@@ -52,11 +55,11 @@ func (db *DB) GetUserByUsername(username string) (*user.User, error) {
 // GetUserByEmail retrieves a user by email.
 func (db *DB) GetUserByEmail(email string) (*user.User, error) {
 	u := &user.User{}
-	query := `SELECT id, user_id, username, email, password_hash, phone, status, risk_level, created_at, updated_at
+	query := `SELECT id, user_id, username, email, password_hash, phone, status, risk_level, COALESCE(default_currency,'USD'), created_at, updated_at
 		FROM users WHERE email = $1`
 	err := db.QueryRow(query, email).Scan(
 		&u.ID, &u.UserID, &u.Username, &u.Email, &u.PasswordHash, &u.Phone,
-		&u.Status, &u.RiskLevel, &u.CreatedAt, &u.UpdatedAt,
+		&u.Status, &u.RiskLevel, &u.DefaultCurrency, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("user not found by email: %s", email)
@@ -105,7 +108,7 @@ func (db *DB) ListUsers(page, pageSize int) ([]user.User, int64, error) {
 		offset = 0
 	}
 
-	query := `SELECT id, user_id, username, email, password_hash, phone, status, risk_level, created_at, updated_at
+	query := `SELECT id, user_id, username, email, password_hash, phone, status, risk_level, COALESCE(default_currency,'USD'), created_at, updated_at
 		FROM users ORDER BY created_at DESC LIMIT $1 OFFSET $2`
 	rows, err := db.Query(query, pageSize, offset)
 	if err != nil {
@@ -118,7 +121,7 @@ func (db *DB) ListUsers(page, pageSize int) ([]user.User, int64, error) {
 		var u user.User
 		if err := rows.Scan(
 			&u.ID, &u.UserID, &u.Username, &u.Email, &u.PasswordHash, &u.Phone,
-			&u.Status, &u.RiskLevel, &u.CreatedAt, &u.UpdatedAt,
+			&u.Status, &u.RiskLevel, &u.DefaultCurrency, &u.CreatedAt, &u.UpdatedAt,
 		); err != nil {
 			return nil, 0, err
 		}

@@ -79,7 +79,8 @@ func main() {
 	// Initialize services
 	kycSvc := service.NewKYCService(db)
 	riskSvc := service.NewRiskService(db)
-	fxSvc := service.NewFXService()
+	fxSvc := service.NewFXService(cfg.FX.APIURL)
+	go fxSvc.RefreshLoop(cfg.FX.RefreshInterval)
 	settlementSvc := service.NewSettlementService(db)
 	chainSvc := service.NewChainService(db)
 	userSvc := service.NewUserService(db, jwtMgr)
@@ -90,6 +91,7 @@ func main() {
 
 	// Setup router
 	router := transport.SetupRouter(&transport.RouterConfig{
+		DB:            db,
 		UserSvc:       userSvc,
 		KYCSvc:        kycSvc,
 		RiskSvc:       riskSvc,
