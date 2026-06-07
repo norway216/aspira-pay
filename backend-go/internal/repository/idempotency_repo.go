@@ -30,6 +30,16 @@ func (db *DB) CreateIdempotencyKey(requestID, requestHash string, responseBody i
 	return err
 }
 
+// InsertIdempotencyTx inserts an idempotency record within a transaction.
+// Used by the transactional outbox pattern (architecture doc §7.4).
+func (db *DB) InsertIdempotencyTx(tx *sql.Tx, requestID, requestHash, responseBody string) error {
+	query := `INSERT INTO idempotency_keys (request_id, request_hash, response_body, response_status, status)
+		VALUES ($1, $2, $3, 201, 'COMPLETED')
+		ON CONFLICT (request_id) DO NOTHING`
+	_, err := tx.Exec(query, requestID, requestHash, responseBody)
+	return err
+}
+
 // GetIdempotencyKey retrieves a cached idempotency response.
 func (db *DB) GetIdempotencyKey(requestID string) (*IdempotencyRecord, error) {
 	r := &IdempotencyRecord{}
@@ -42,6 +52,11 @@ func (db *DB) GetIdempotencyKey(requestID string) (*IdempotencyRecord, error) {
 		return nil, nil // Not found — not an error
 	}
 	return r, err
+}
+
+// GetIdempotencyRecord is an alias for GetIdempotencyKey for cleaner naming.
+func (db *DB) GetIdempotencyRecord(requestID string) (*IdempotencyRecord, error) {
+	return db.GetIdempotencyKey(requestID)
 }
 
 // CheckAndCreateIdempotency performs idempotency check and creation atomically.
