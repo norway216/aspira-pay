@@ -82,6 +82,35 @@ Base URL: http://localhost:8080/api/v2
 5. The C++ engine is responsible only for high-performance execution; Go handles business orchestration
 6. Local ledger finality comes first; on-chain confirmation follows with eventual consistency
 
+## Web Admin Screenshots
+
+The Aspira Pay V2 admin dashboard provides a modern, dark-themed interface for managing cross-border payments, users, ledger entries, and blockchain audit trails.
+
+### Dashboard
+![Dashboard](docs/screenshots/01-dashboard.png)
+
+The **Dashboard** gives an at-a-glance overview of the system with key metrics — total payments, registered users, settlement batches, and system status. Quick-action shortcuts provide fast navigation to core workflows.
+
+### Transactions
+![Transactions](docs/screenshots/02-transactions.png)
+
+The **Transactions** page lists all cross-border payment orders in a sortable table. Users can create new payments via the inline form, selecting source/target currencies and amounts. Each payment is tracked through its full lifecycle with real-time status updates.
+
+### Users
+![Users](docs/screenshots/03-users.png)
+
+The **Users** page manages registered participants. New users can be registered directly from the dashboard. The table displays user ID, username, email, account status, and risk level for compliance review.
+
+### Ledger Explorer
+![Ledger Explorer](docs/screenshots/04-ledger.png)
+
+The **Ledger Explorer** provides double-entry bookkeeping transparency. Enter a Payment ID to retrieve full debit/credit entries, verify that totals balance, and trace every movement of funds across accounts.
+
+### Blockchain Audit Explorer
+![Audit Explorer](docs/screenshots/05-audit.png)
+
+The **Blockchain Audit Explorer** visualises the tamper-proof hash chain. Each block links to its predecessor via cryptographic hashes. Users can audit any payment by looking up its complete on-chain trail, ensuring end-to-end traceability.
+
 ## License
 
 Proprietary — Aspira Studio
