@@ -233,7 +233,7 @@ func (c *APIClient) SetToken(token string) {
 	c.token = token
 }
 
-func (c *APIClient) doRequest(method, path string, body interface{}, result interface{}) (int, time.Duration, error) {
+func (c *APIClient) doRequest(method, path string, body interface{}, result interface{}, extraHeaders ...string) (int, time.Duration, error) {
 	start := time.Now()
 
 	var bodyReader io.Reader
@@ -253,6 +253,10 @@ func (c *APIClient) doRequest(method, path string, body interface{}, result inte
 	req.Header.Set("Content-Type", "application/json")
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	// Apply extra headers: key1, value1, key2, value2, ...
+	for i := 0; i+1 < len(extraHeaders); i += 2 {
+		req.Header.Set(extraHeaders[i], extraHeaders[i+1])
 	}
 
 	resp, err := c.client.Do(req)
@@ -371,13 +375,13 @@ func (c *APIClient) CreatePayment(senderID, receiverID, sourceCurrency, targetCu
 		"country_to":       "JP",
 	}
 
-	idempotencyKey := fmt.Sprintf("bench_%d_%d", time.Now().UnixNano(), rand.Int63())
+	// Generate unique idempotency key and send as HTTP header
+	// Architecture doc §9.1: Every request must include idempotency key
+	idempotencyKey := fmt.Sprintf("bench_%d_%d_%d", time.Now().UnixNano(), rand.Int63(), c.stats.TotalRequests.Load())
 
 	var result map[string]interface{}
-	status, lat, err := c.doRequest("POST", "/api/v2/payments", reqBody, &result)
-
-	// Set idempotency key via header (simplified: included in URL pattern)
-	_ = idempotencyKey
+	status, lat, err := c.doRequest("POST", "/api/v2/payments", reqBody, &result,
+		"Idempotency-Key", idempotencyKey)
 
 	if err != nil {
 		c.stats.Latency.Record(lat)

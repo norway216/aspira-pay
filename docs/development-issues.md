@@ -1333,3 +1333,233 @@ $ go build ./cmd/server/
 | KYC/用户状态更新 | 2 次往返 | 1 次往返 |
 | 支付列表第1000页 | OFFSET (~2000ms) | Keyset (~5ms) |
 | 连接泄漏风险 | 无生命周期管理 | 30min 回收 |
+
+
+## 17. 前端页面交易数据不更新 — 缺少自动轮询
+
+### 日期
+
+2026-06-07
+
+### 现象
+
+用户运行 bench client 和 stress test 产生交易后，浏览器中 Dashboard 和 Transactions 页面的数据一直显示 0，或者停留在旧数据不动。
+
+### 根因
+
+所有 5 个前端页面都使用 `useEffect(..., [])` 空依赖数组，数据**仅在组件挂载时获取一次**，之后不再请求。支付是异步 Saga 处理的（`go s.runSaga(paymentID)` 在后台执行），状态从 `CREATED` 一路变到 `COMPLETED`，但前端永远不会看到这些变化。
+
+时间线：
+
+```
+页面加载:  GET /payments → 空列表
+           ↓
+创建支付:  POST /payments → {"status": "CREATED"}  ← 前端看到了
+           ↓
+后台 Saga: KYC_CHECKED → RISK_CHECKED → ... → COMPLETED  ← 前端永远看不到
+```
+
+### 解决方案
+
+新建 `usePolling` 通用轮询 Hook，核心机制：
+
+```typescript
+export function usePolling(fn, intervalMs, options?) {
+  const savedFn = useRef(fn)
+  savedFn.current = fn  // 始终指向最新回调，无需重启定时器
+
+  const pollingRef = useRef(false)  // 防并发：上一次未完成则跳过
+
+  const refresh = useCallback(async () => {
+    if (pollingRef.current) return  // 跳过
+    pollingRef.current = true
+    try { await savedFn.current() }
+    finally { pollingRef.current = false }
+  }, [])
+
+  useEffect(() => {
+    refresh()  // 立即首次调用
+    const timer = setInterval(refresh, intervalMs)
+    return () => clearInterval(timer)  // 组件卸载清理
+  }, [intervalMs])
+
+  return { refresh }
+}
+```
+
+4 个页面接入：
+
+| 页面 | 轮询间隔 | 原因 |
+|------|---------|------|
+| Dashboard | 3 秒 | 统计卡片需实时反映交易量变化 |
+| Transactions | 2 秒 | 支付状态异步变化最频繁 |
+| Audit | 5 秒 | 链上区块每 1 秒或 1000 条事件才出一个 |
+| Users | 5 秒 | 用户注册频率低 |
+
+每个页面还添加了手动 `⟳ Refresh` 按钮和创建后的 `await refresh()` 立即刷新。
+
+### 关键经验
+
+1. **useRef 保持回调最新**：`savedFn.current = fn` 让定时器始终调用最新回调，无需重启定时器
+2. **防并发**：`pollingRef` 防止上一次请求未完成时堆积下一次
+3. **`useEffect` 清理**：组件卸载时必须 `clearInterval`，否则内存泄漏
+4. **异步流程必须有轮询或 WebSocket**：前端不能假设数据"创建完就在那儿"—— Saga 是异步的
+
+
+## 18. 测试程序未发送 Idempotency-Key 请求头
+
+### 日期
+
+2026-06-07
+
+### 现象
+
+Bench client 和 stress test 虽然能成功创建支付（因为中间件自动生成 key），但**每次请求都有不同的自动生成 key**，无法实现真正的幂等性保护。网络重试时同一笔支付可能被重复创建。
+
+### 根因
+
+**Bench Client** （[main.go:380](backend-go/cmd/bench-client/main.go#L380)）：
+```go
+idempotencyKey := fmt.Sprintf("bench_%d_%d", time.Now().UnixNano(), rand.Int63())
+// ...
+_ = idempotencyKey  // ← 生成后丢弃，从未作为 Header 发出
+```
+
+**Stress Test** （[main.go:198-210](backend-go/cmd/stress-test/main.go#L198-L210)）：
+```go
+// 完全没有生成 Idempotency-Key
+func (c *APIClient) CreatePayment(...) (int, error) {
+    status, err := c.do("POST", "/api/v2/payments", ...)
+}
+```
+
+**两个 HTTP Client** 的 `doRequest` / `do` 方法都只设置了 `Content-Type` 和 `Authorization` Header，不支持自定义 Header。
+
+### 解决方案
+
+**1. 扩展 HTTP Client 支持自定义 Header**
+
+```go
+// 修复前
+func (c *APIClient) do(method, path string, body, result interface{}) (int, error) {
+
+// 修复后
+func (c *APIClient) do(method, path string, body, result interface{}, extraHeaders ...string) (int, error) {
+    // ...
+    for i := 0; i+1 < len(extraHeaders); i += 2 {
+        req.Header.Set(extraHeaders[i], extraHeaders[i+1])
+    }
+}
+```
+
+**2. CreatePayment 发送 Idempotency-Key**
+
+Bench client 和 stress test 的 `CreatePayment` 都改为：
+```go
+idempotencyKey := fmt.Sprintf("bench_%d_%d_%d", time.Now().UnixNano(), rand.Int63(), counter)
+status, _, err := c.doRequest("POST", "/api/v2/payments", reqBody, &result,
+    "Idempotency-Key", idempotencyKey)
+```
+
+### 关键经验
+
+架构设计文档 §9.1 明确要求每个请求都携带幂等 key。中间件的自动生成只是安全网，不能替代客户端正确实现。测试程序尤其需要正确的幂等性——压测场景下网络超时重试很常见。
+
+
+## 19. 支付创建 PANIC：nil pointer dereference in checkIdempotency
+
+### 日期
+
+2026-06-07
+
+### 现象
+
+API 重启后，手动 `curl POST /api/v2/payments` 返回 `500 internal server error`。日志中只有：
+
+```
+[PANIC] runtime error: invalid memory address or nil pointer dereference
+```
+
+Bench client 之前能正常工作，但手动 curl 请求却 panic。
+
+### 排查过程
+
+**Step 1**：日志中 PANIC 消息没有堆栈跟踪 → 无法定位具体行号。
+
+```go
+// 修复前 — recovery.go
+log.Printf("[PANIC] %v", err)  // 只有错误消息，无堆栈
+```
+
+改进为完整堆栈输出：
+```go
+log.Printf("[PANIC] %v\n%s", err, string(debug.Stack()))
+```
+
+**Step 2**：堆栈精确指向：
+```
+payment_svc.go:219 → checkIdempotency
+payment_svc.go:60  → CreatePayment
+```
+
+**Step 3**：读源码 [payment_svc.go:213-219](backend-go/internal/service/payment_svc.go#L213-L219)：
+```go
+func (s *PaymentService) checkIdempotency(key, requestHash string) (*payment.CreateResponse, error) {
+    record, err := s.db.GetIdempotencyRecord(key)
+    if err != nil {
+        return nil, nil  // DB 错误 → 放行
+    }
+    // ← 这里缺少 record == nil 的判断!
+    if record.RequestHash == requestHash {  // 💥 PANIC: record 是 nil
+```
+
+**Step 4**：检查 `GetIdempotencyRecord` 的实现 — 在记录不存在时返回 `(nil, nil)`，不是 error。但 `checkIdempotency` 只处理了 `err != nil` 的情况，没处理 `record == nil`。
+
+**Step 5**：验证假设 — bench client 之前正常是因为 `IdempotencyMiddleware` 自动生成 key 后再由 `checkIdempotency` 处理时，如果之前有相同 key 的请求……不对，bench client 每次都生成不同的 random key，所以 `GetIdempotencyRecord` 总是返回 `(nil, nil)`。那么每次支付都应该 panic。
+
+等等，再想想。bench client 什么时候停止工作的？看时间线：第一次 API 优化（payment_svc.go 改动）是 18:00 左右，旧的 API 二进制在 19:05 启动。如果旧二进制不包含 payment_svc.go 的改动（`checkIdempotency` 是新加的），那 bench client 当然没问题——旧代码里根本没有 `checkIdempotency`！
+
+**真正的连锁问题**：
+1. bench client / stress test 用的是**旧 API 二进制**（没有 `checkIdempotency`）→ 正常工作
+2. 我们在 19:33 重新编译和重启了 API（包含 `checkIdempotency`）→ 开始 PANIC
+3. bench client 已停止运行 → 只有 curl 命令触发 → 发现 PANIC
+
+### 根因
+
+`GetIdempotencyRecord` 在记录不存在时返回 `(nil, nil)`，而 `checkIdempotency` 没有对 `record == nil` 做判空保护，直接访问 `record.RequestHash` 触发 nil pointer dereference。
+
+```go
+// 问题代码
+record, err := s.db.GetIdempotencyRecord(key)
+if err != nil {
+    return nil, nil  // 仅处理了 error
+}
+// record 可能是 nil（记录不存在）!
+if record.RequestHash == requestHash { ... }  // PANIC
+```
+
+这是典型的 "函数返回值的隐式 nil 约定" 问题 —— `GetIdempotencyRecord` 把"记录不存在"编码为 `(nil, nil)` 而不是 error，但调用方只检查了 Go 惯例的 `err != nil`。
+
+### 解决方案
+
+```go
+func (s *PaymentService) checkIdempotency(key, requestHash string) (*payment.CreateResponse, error) {
+    record, err := s.db.GetIdempotencyRecord(key)
+    if err != nil {
+        return nil, nil  // DB error — proceed as new request
+    }
+    if record == nil {   // ← 新增判空
+        return nil, nil  // No existing record — new request, proceed
+    }
+    // ...
+}
+```
+
+### 关键经验
+
+1. **Go 中 nil 不等于 error**：函数返回 `(nil, nil)` 表示"成功但没有数据"，这种情况很常见，调用方必须显式检查
+2. **Panic 恢复必须打印堆栈**：`recover()` 只给 `%v` 不打印 `debug.Stack()` 等于盲查
+3. **运行中的进程不会自动更新**：`go build` 只生成新二进制，不会替换正在运行的进程。必须 `kill` + 重启
+4. **不能只靠"之前能跑"判断代码正确**：旧二进制没有新代码，两者行为完全不同
+5. **排查方法**：日志缺堆栈 → 加 `debug.Stack()` → 精确定位行号 → 读源码找到 nil 访问
+| 连接泄漏风险 | 无生命周期管理 | 30min 回收 |

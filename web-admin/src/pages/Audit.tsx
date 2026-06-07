@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { api, ensureAuth } from '../api/client'
 import ChainExplorer from '../components/ChainExplorer'
+import { usePolling } from '../hooks/usePolling'
 
 export default function Audit() {
   const [blocks, setBlocks] = useState<any[]>([])
@@ -10,8 +11,20 @@ export default function Audit() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    ensureAuth().then(() => api.getBlocks().then(data => setBlocks(data.blocks || [])).catch(console.error)).catch(e => setError(e.message))
+    ensureAuth().catch(e => setError(e.message))
   }, [])
+
+  // Auto-refresh chain blocks every 5 seconds
+  const loadBlocks = useCallback(async () => {
+    try {
+      const data = await api.getBlocks()
+      setBlocks(data.blocks || [])
+    } catch (e: any) {
+      console.error('Failed to load blocks:', e)
+    }
+  }, [])
+
+  const { refresh } = usePolling(loadBlocks, 5000)
 
   const handleAuditSearch = async () => {
     if (!searchId.trim()) return
@@ -24,7 +37,14 @@ export default function Audit() {
 
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-6">Blockchain Audit Explorer</h2>
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <h2 className="text-2xl font-bold">Blockchain Audit Explorer</h2>
+          <span className="text-xs text-gray-600 bg-gray-800 px-2 py-0.5 rounded">Auto-refresh 5s</span>
+        </div>
+        <button onClick={refresh} className="px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm text-gray-400 hover:text-white transition-colors">⟳ Refresh</button>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-6"><h3 className="text-lg font-semibold mb-4">Chain Status</h3><dl className="space-y-2 text-sm"><div className="flex justify-between"><dt className="text-gray-500">Block Height</dt><dd className="font-mono">{blocks.length}</dd></div><div className="flex justify-between"><dt className="text-gray-500">Latest Hash</dt><dd className="font-mono text-xs text-gray-400">{blocks[0]?.block_hash?.substring(0, 32)}...</dd></div><div className="flex justify-between"><dt className="text-gray-500">Mode</dt><dd className="text-green-400">Hash Chain (Sandbox)</dd></div></dl></div>
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-6"><h3 className="text-lg font-semibold mb-4">Payment Audit Lookup</h3><div className="flex gap-3"><input type="text" value={searchId} onChange={e => setSearchId(e.target.value)} placeholder="Payment ID" className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white font-mono text-sm" /><button onClick={handleAuditSearch} disabled={loading} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium">{loading ? '...' : 'Audit'}</button></div></div>
