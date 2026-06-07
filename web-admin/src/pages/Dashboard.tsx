@@ -1,21 +1,19 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { api, ensureAuth } from '../api/client'
 import StatsCard from '../components/StatsCard'
+import { usePolling } from '../hooks/usePolling'
 
 export default function Dashboard() {
   const [stats, setStats] = useState<any>(null)
   const [error, setError] = useState('')
   const [authChecked, setAuthChecked] = useState(false)
 
+  // Initial auth
   useEffect(() => {
     async function init() {
       try {
-        // Auto-login for Sandbox
         await ensureAuth()
         setAuthChecked(true)
-        // Now fetch dashboard data
-        const data = await api.getDashboard()
-        setStats(data)
       } catch (err: any) {
         setError(err.message)
       }
@@ -23,11 +21,26 @@ export default function Dashboard() {
     init()
   }, [])
 
-  if (error) {
+  // Auto-refresh dashboard every 3 seconds
+  const loadDashboard = useCallback(async () => {
+    try {
+      const data = await api.getDashboard()
+      setStats(data)
+      setError('')
+    } catch (err: any) {
+      // Don't overwrite existing data on transient errors
+      if (!stats) setError(err.message)
+    }
+  }, [stats])
+
+  const { refresh } = usePolling(loadDashboard, 3000)
+
+  if (error && !stats) {
     return (
       <div className="bg-red-900/30 border border-red-800 rounded-lg p-4 text-red-400">
         Cannot connect to API: {error}
         <p className="text-sm mt-2">Make sure the API server is running on port 8080.</p>
+        <button onClick={refresh} className="mt-3 px-4 py-2 bg-red-800 hover:bg-red-700 rounded-lg text-sm">Retry</button>
       </div>
     )
   }
@@ -45,7 +58,16 @@ export default function Dashboard() {
 
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-6">Dashboard</h2>
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-2xl font-bold">Dashboard</h2>
+        <button
+          onClick={refresh}
+          className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm text-gray-400 hover:text-white transition-colors"
+          title="Refresh dashboard data"
+        >
+          ⟳ Refresh
+        </button>
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <StatsCard title="Total Payments" value={stats?.total_payments || 0} icon="💱" />
@@ -84,6 +106,10 @@ export default function Dashboard() {
             <div className="flex justify-between">
               <dt className="text-gray-500">API Endpoint</dt>
               <dd className="text-gray-400">/api/v2</dd>
+            </div>
+            <div className="flex justify-between">
+              <dt className="text-gray-500">Auto-refresh</dt>
+              <dd className="text-gray-500">Every 3s</dd>
             </div>
           </dl>
         </div>

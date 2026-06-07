@@ -116,7 +116,7 @@ func NewAPIClient(baseURL string) *APIClient {
 	}
 }
 
-func (c *APIClient) do(method, path string, body, result interface{}) (int, error) {
+func (c *APIClient) do(method, path string, body, result interface{}, extraHeaders ...string) (int, error) {
 	var bodyReader io.Reader
 	if body != nil {
 		data, _ := json.Marshal(body)
@@ -126,6 +126,10 @@ func (c *APIClient) do(method, path string, body, result interface{}) (int, erro
 	req.Header.Set("Content-Type", "application/json")
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	// Apply extra headers: key1, value1, key2, value2, ...
+	for i := 0; i+1 < len(extraHeaders); i += 2 {
+		req.Header.Set(extraHeaders[i], extraHeaders[i+1])
 	}
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -196,6 +200,9 @@ func (c *APIClient) ApproveKYC(userID string) error {
 }
 
 func (c *APIClient) CreatePayment(senderID, receiverID, srcCurrency, tgtCurrency string, amount int64) (int, error) {
+	// Generate unique idempotency key per request
+	// Architecture doc §9.1: Every request must include idempotency key
+	idempotencyKey := fmt.Sprintf("stress_%d_%d", time.Now().UnixNano(), rand.Int63())
 	status, err := c.do("POST", "/api/v2/payments", map[string]interface{}{
 		"sender_user_id":   senderID,
 		"receiver_user_id": receiverID,
@@ -205,7 +212,8 @@ func (c *APIClient) CreatePayment(senderID, receiverID, srcCurrency, tgtCurrency
 		"purpose":          "stress_test",
 		"country_from":     "US",
 		"country_to":       "JP",
-	}, nil)
+	}, nil,
+		"Idempotency-Key", idempotencyKey)
 	return status, err
 }
 

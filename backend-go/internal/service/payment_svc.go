@@ -212,7 +212,10 @@ func (s *PaymentService) CreatePayment(req payment.CreateRequest, idempotencyKey
 func (s *PaymentService) checkIdempotency(key, requestHash string) (*payment.CreateResponse, error) {
 	record, err := s.db.GetIdempotencyRecord(key)
 	if err != nil {
-		return nil, nil // Not found — new request, proceed
+		return nil, nil // DB error — proceed as new request
+	}
+	if record == nil {
+		return nil, nil // No existing record — new request, proceed
 	}
 
 	// Same key + same hash → return cached result (idempotent replay)

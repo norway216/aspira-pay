@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { api, ensureAuth } from '../api/client'
+import { usePolling } from '../hooks/usePolling'
 
 export default function Users() {
   const [users, setUsers] = useState<any[]>([])
@@ -9,30 +10,53 @@ export default function Users() {
   const [regForm, setRegForm] = useState({ username: '', email: '', password: '' })
 
   useEffect(() => {
-    ensureAuth().then(() => loadUsers()).catch(e => setError(e.message))
+    ensureAuth().catch(e => setError(e.message))
   }, [])
 
-  const loadUsers = async () => {
+  // Auto-refresh user list every 5 seconds
+  const loadUsers = useCallback(async () => {
     try {
       const data = await api.getUsers()
       setUsers(data.users || [])
-    } catch (e: any) { setError(e.message) } finally { setLoading(false) }
-  }
+      setError('')
+    } catch (e: any) {
+      if (!users.length) setError(e.message)
+    } finally {
+      setLoading(false)
+    }
+  }, [users.length])
+
+  const { refresh } = usePolling(loadUsers, 5000)
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
       await api.register(regForm.username, regForm.email, regForm.password)
       setShowRegister(false)
-      loadUsers()
+      setRegForm({ username: '', email: '', password: '' })
+      await refresh()
     } catch (err: any) { alert(err.message) }
   }
 
-  if (error) return <div className="bg-red-900/30 border border-red-800 rounded-lg p-4 text-red-400">{error}</div>
+  if (error && !users.length) return (
+    <div className="bg-red-900/30 border border-red-800 rounded-lg p-4 text-red-400">
+      {error}
+      <button onClick={refresh} className="ml-3 px-3 py-1 bg-red-800 rounded text-sm">Retry</button>
+    </div>
+  )
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6"><h2 className="text-2xl font-bold">Users</h2><button onClick={() => setShowRegister(!showRegister)} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium">+ Register</button></div>
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <h2 className="text-2xl font-bold">Users</h2>
+          <span className="text-xs text-gray-600 bg-gray-800 px-2 py-0.5 rounded">Auto-refresh 5s</span>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={refresh} className="px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm text-gray-400 hover:text-white transition-colors">⟳</button>
+          <button onClick={() => setShowRegister(!showRegister)} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium">+ Register</button>
+        </div>
+      </div>
       {showRegister && (<div className="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-6"><h3 className="text-lg font-semibold mb-4">Register New User</h3><form onSubmit={handleRegister} className="space-y-4 max-w-md"><div><label className="block text-sm text-gray-400 mb-1">Username</label><input type="text" value={regForm.username} onChange={e => setRegForm({...regForm, username: e.target.value})} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white" required /></div><div><label className="block text-sm text-gray-400 mb-1">Email</label><input type="email" value={regForm.email} onChange={e => setRegForm({...regForm, email: e.target.value})} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white" required /></div><div><label className="block text-sm text-gray-400 mb-1">Password</label><input type="password" value={regForm.password} onChange={e => setRegForm({...regForm, password: e.target.value})} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white" required /></div><div className="flex gap-3"><button type="submit" className="px-6 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm">Register</button><button type="button" onClick={() => setShowRegister(false)} className="px-6 py-2 bg-gray-700 rounded-lg text-sm">Cancel</button></div></form></div>)}
       {loading ? <div className="text-gray-500">Loading...</div> : (
         <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden"><table className="w-full"><thead><tr className="border-b border-gray-800 text-left"><th className="p-4 text-sm text-gray-500">User ID</th><th className="p-4 text-sm text-gray-500">Username</th><th className="p-4 text-sm text-gray-500">Email</th><th className="p-4 text-sm text-gray-500">Status</th><th className="p-4 text-sm text-gray-500">Risk Level</th></tr></thead>
