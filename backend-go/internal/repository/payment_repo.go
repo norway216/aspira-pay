@@ -8,20 +8,44 @@ import (
 	"github.com/aspira/aspira-pay/internal/domain/payment"
 )
 
-// CreatePaymentOrder inserts a new payment order.
+// CreatePaymentOrder inserts a new payment order using a new transaction.
 func (db *DB) CreatePaymentOrder(o *payment.Order) error {
+	tx, err := db.BeginTx()
+	if err != nil {
+		return fmt.Errorf("cannot begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	if err := db.CreatePaymentOrderTx(tx, o); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+// CreatePaymentOrderTx inserts a new payment order within an existing transaction.
+// Used by the transactional outbox pattern (architecture doc §7.4).
+func (db *DB) CreatePaymentOrderTx(tx *sql.Tx, o *payment.Order) error {
+	now := time.Now()
+	if o.CreatedAt.IsZero() {
+		o.CreatedAt = now
+	}
+	o.UpdatedAt = now
+
 	query := `
 		INSERT INTO payment_orders (payment_id, request_id, sender_user_id, receiver_user_id,
 			source_currency, target_currency, source_amount, target_amount, fee_amount,
-			fx_rate, status, risk_score, quote_id, purpose, country_from, country_to)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-		RETURNING id, created_at, updated_at`
-	return db.QueryRow(query,
+			fx_rate, status, risk_score, quote_id, purpose, country_from, country_to,
+			created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+		RETURNING id`
+	return tx.QueryRow(query,
 		o.PaymentID, o.RequestID, o.SenderUserID, o.ReceiverUserID,
 		o.SourceCurrency, o.TargetCurrency, o.SourceAmount, o.TargetAmount, o.FeeAmount,
 		o.FXRate, o.Status, o.RiskScore, o.QuoteID,
 		o.Purpose, o.CountryFrom, o.CountryTo,
-	).Scan(&o.ID, &o.CreatedAt, &o.UpdatedAt)
+		o.CreatedAt, o.UpdatedAt,
+	).Scan(&o.ID)
 }
 
 // GetPaymentOrder retrieves a payment by payment_id.

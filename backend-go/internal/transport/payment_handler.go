@@ -19,7 +19,8 @@ func NewPaymentHandler(svc *service.PaymentService) *PaymentHandler {
 	return &PaymentHandler{svc: svc}
 }
 
-// CreatePayment handles payment order creation.
+// CreatePayment handles payment order creation with idempotency.
+// Architecture doc §9.1: Idempotency-Key and body hash passed to service layer.
 func (h *PaymentHandler) CreatePayment(c *gin.Context) {
 	var req payment.CreateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -27,7 +28,19 @@ func (h *PaymentHandler) CreatePayment(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.svc.CreatePayment(req)
+	// Extract idempotency context set by IdempotencyMiddleware
+	idempotencyKey, _ := c.Get("idempotency_key")
+	requestHash, _ := c.Get("request_hash")
+	ik := ""
+	rh := ""
+	if v, ok := idempotencyKey.(string); ok {
+		ik = v
+	}
+	if v, ok := requestHash.(string); ok {
+		rh = v
+	}
+
+	resp, err := h.svc.CreatePayment(req, ik, rh)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
