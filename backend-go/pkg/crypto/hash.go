@@ -1,8 +1,11 @@
-// Package crypto provides cryptographic helpers for hashing, HMAC, and hash chains.
+// Package crypto provides cryptographic helpers for hashing, HMAC, hash chains,
+// Merkle trees, and audit signatures.
 package crypto
 
 import (
+	"crypto/ed25519"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -153,4 +156,87 @@ func BlockHash(eventHashes []string, prevHash string) string {
 	sort.Strings(eventHashes)
 	merkleRoot := MerkleRoot(eventHashes)
 	return SHA256(fmt.Sprintf("%s:%s:%d", merkleRoot, prevHash, len(eventHashes)))
+}
+
+// ──────────────────────────────────────────────
+// Deterministic Hashing (§8.2-8.3)
+// Fixed field order, fixed encoding, no float values.
+// ──────────────────────────────────────────────
+
+// DeterministicEventHash computes an event hash with fixed field order.
+// Architecture doc §8.3: All hash inputs must be deterministic.
+// Format: event_id + payment_id_hash + event_type + sequence_id + ledger_entry_hash + timestamp
+func DeterministicEventHash(eventID, paymentID, eventType, ledgerEntryHash string, sequenceID uint64, timestamp int64) string {
+	data := fmt.Sprintf("%s:%s:%s:%d:%s:%d",
+		eventID,
+		HashPaymentID(paymentID),
+		eventType,
+		sequenceID,
+		ledgerEntryHash,
+		timestamp,
+	)
+	return SHA256(data)
+}
+
+// CanonicalBatchPayload creates a deterministic canonical payload for batch signing.
+// Architecture doc §11.1: Fixed field order ensures consistent signatures.
+func CanonicalBatchPayload(batchID, merkleRoot, ledgerRootHash string,
+	startSeq, endSeq int64, eventCount int, timestamp int64) string {
+	return fmt.Sprintf("%s:%s:%s:%d:%d:%d:%d",
+		batchID,
+		merkleRoot,
+		ledgerRootHash,
+		startSeq,
+		endSeq,
+		eventCount,
+		timestamp,
+	)
+}
+
+// BatchedHashChainBlock computes a hash chain block hash per §7.1 formula:
+//
+//	block_hash = sha256(prev_block_hash + merkle_root + batch_id + event_count + timestamp)
+func BatchedHashChainBlock(prevHash, merkleRoot, batchID string, eventCount int, timestamp int64) string {
+	data := fmt.Sprintf("%s:%s:%s:%d:%d", prevHash, merkleRoot, batchID, eventCount, timestamp)
+	return SHA256(data)
+}
+
+// ──────────────────────────────────────────────
+// Ed25519 Audit Signatures (§11)
+// Architecture doc §11.2: Ed25519 for fast internal audit signatures.
+// ──────────────────────────────────────────────
+
+// GenerateKeyPair generates an Ed25519 key pair for audit signing.
+func GenerateKeyPair() (publicKey, privateKey []byte, err error) {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, nil, err
+	}
+	return pub, priv, nil
+}
+
+// SignAuditBatch signs a canonical batch payload with Ed25519.
+// Architecture doc §11.1: audit_signature = sign(batch_id + merkle_root + ...)
+func SignAuditBatch(privateKey ed25519.PrivateKey, payload string) string {
+	sig := ed25519.Sign(privateKey, []byte(payload))
+	return hex.EncodeToString(sig)
+}
+
+// VerifyAuditSignature verifies an Ed25519 audit signature for a batch payload.
+func VerifyAuditSignature(publicKey ed25519.PublicKey, payload, signatureHex string) bool {
+	sig, err := hex.DecodeString(signatureHex)
+	if err != nil {
+		return false
+	}
+	return ed25519.Verify(publicKey, []byte(payload), sig)
+}
+
+// SignBytes signs arbitrary bytes with Ed25519 (used for batch payloads).
+func SignBytes(privateKey ed25519.PrivateKey, data []byte) []byte {
+	return ed25519.Sign(privateKey, data)
+}
+
+// VerifyBytes verifies an Ed25519 signature.
+func VerifyBytes(publicKey ed25519.PublicKey, data, signature []byte) bool {
+	return ed25519.Verify(publicKey, data, signature)
 }
