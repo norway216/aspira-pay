@@ -126,9 +126,12 @@ type CreateResponse struct {
 }
 
 // ListQuery filters for listing payments.
+// Supports both OFFSET and keyset (cursor-based) pagination.
+// For deep pagination, use Cursor instead of Page.
 type ListQuery struct {
 	Status   string `form:"status"`
 	SenderID string `form:"sender_id"`
 	Page     int    `form:"page"`
 	PageSize int    `form:"page_size"`
+	Cursor   string `form:"cursor"` // Keyset cursor: "2006-01-02T15:04:05Z,id"
 }
