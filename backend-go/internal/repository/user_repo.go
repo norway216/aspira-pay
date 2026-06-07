@@ -3,6 +3,7 @@ package repository
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/aspira/aspira-pay/internal/domain/user"
 )
@@ -67,24 +68,46 @@ func (db *DB) GetUserByEmail(email string) (*user.User, error) {
 	return u, err
 }
 
-// UpdateUserStatus updates user status with transition validation.
+// UpdateUserStatus updates user status with transition validation in a single query.
+//
+// Before: SELECT user → Go-side validate → UPDATE (2 round-trips)
+// After:  Single atomic UPDATE with WHERE status IN (valid_from_states)
 func (db *DB) UpdateUserStatus(userID string, newStatus user.UserStatus) error {
-	current, err := db.GetUserByID(userID)
-	if err != nil {
-		return err
+	var validFrom []user.UserStatus
+	for from, tos := range user.ValidTransitions {
+		for _, to := range tos {
+			if to == newStatus {
+				validFrom = append(validFrom, from)
+			}
+		}
 	}
-	if !user.CanTransition(current.Status, newStatus) {
-		return fmt.Errorf("invalid user status transition: %s -> %s", current.Status, newStatus)
+	if len(validFrom) == 0 {
+		return fmt.Errorf("no valid transition to user status: %s", newStatus)
 	}
 
-	query := `UPDATE users SET status = $1, updated_at = now() WHERE user_id = $2`
-	result, err := db.Exec(query, newStatus, userID)
+	placeholders := make([]string, len(validFrom))
+	args := []interface{}{newStatus, userID}
+	for i, s := range validFrom {
+		placeholders[i] = fmt.Sprintf("$%d", i+3)
+		args = append(args, s)
+	}
+
+	query := fmt.Sprintf(
+		`UPDATE users SET status = $1, updated_at = now()
+		 WHERE user_id = $2 AND status IN (%s)`,
+		strings.Join(placeholders, ","))
+
+	result, err := db.Exec(query, args...)
 	if err != nil {
 		return err
 	}
 	rows, _ := result.RowsAffected()
 	if rows == 0 {
-		return fmt.Errorf("user not found: %s", userID)
+		// Check if user exists vs invalid transition
+		if _, err := db.GetUserByID(userID); err != nil {
+			return err
+		}
+		return fmt.Errorf("invalid user status transition to %s", newStatus)
 	}
 	return nil
 }

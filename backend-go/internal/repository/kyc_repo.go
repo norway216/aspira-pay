@@ -3,6 +3,7 @@ package repository
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aspira/aspira-pay/internal/domain/kyc"
@@ -54,23 +55,54 @@ func (db *DB) GetKYCProfile(userID string) (*kyc.Profile, error) {
 	return p, err
 }
 
-// UpdateKYCStatus updates KYC status with transition validation.
+// UpdateKYCStatus updates KYC status with transition validation in a single query.
+//
+// Before: SELECT profile → Go-side validate → UPDATE (2 round-trips)
+// After:  Single atomic UPDATE with WHERE kyc_status IN (valid_from_states)
 func (db *DB) UpdateKYCStatus(userID string, newStatus kyc.KYCStatus, reviewerID, reason string) error {
-	current, err := db.GetKYCProfile(userID)
+	// Collect valid source states
+	var validFrom []kyc.KYCStatus
+	for from, tos := range kyc.ValidTransitions {
+		for _, to := range tos {
+			if to == newStatus {
+				validFrom = append(validFrom, from)
+			}
+		}
+	}
+	if len(validFrom) == 0 {
+		return fmt.Errorf("no valid transition to KYC status: %s", newStatus)
+	}
+
+	// Build IN clause placeholders
+	placeholders := make([]string, len(validFrom))
+	args := []interface{}{newStatus, reviewerID, reason, time.Now(), userID}
+	for i, s := range validFrom {
+		placeholders[i] = fmt.Sprintf("$%d", i+6)
+		args = append(args, s)
+	}
+
+	query := fmt.Sprintf(
+		`UPDATE kyc_profiles
+		 SET kyc_status = $1, reviewed_by = $2, rejection_reason = $3, reviewed_at = $4, updated_at = now()
+		 WHERE user_id = $5 AND kyc_status IN (%s)`,
+		strings.Join(placeholders, ","))
+
+	result, err := db.Exec(query, args...)
 	if err != nil {
 		return err
 	}
-	if !kyc.CanTransition(current.KYCStatus, newStatus) {
-		return fmt.Errorf("invalid KYC transition: %s -> %s", current.KYCStatus, newStatus)
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		// Verify: not found or invalid transition?
+		if _, err := db.GetKYCProfile(userID); err != nil {
+			return err
+		}
+		return fmt.Errorf("invalid KYC transition to %s", newStatus)
 	}
-
-	now := time.Now()
-	query := `UPDATE kyc_profiles
-		SET kyc_status = $1, reviewed_by = $2, rejection_reason = $3, reviewed_at = $4, updated_at = now()
-		WHERE user_id = $5`
-	_, err = db.Exec(query, newStatus, reviewerID, reason, now, userID)
-	return err
+	return nil
 }
+
+// Note: strings import needed — add to imports.
 
 // UpdateKYCRiskLevel updates the risk level from KYC.
 func (db *DB) UpdateKYCRiskLevel(userID string, riskLevel kyc.KYCRiskLevel) error {
