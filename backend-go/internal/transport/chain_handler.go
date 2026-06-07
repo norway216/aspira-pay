@@ -10,6 +10,7 @@ import (
 )
 
 // ChainHandler handles blockchain audit HTTP endpoints.
+// Architecture doc §15: Audit verification API.
 type ChainHandler struct {
 	svc *service.ChainService
 }
@@ -61,4 +62,31 @@ func (h *ChainHandler) GetAuditTrail(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, trail)
+}
+
+// VerifyAudit performs full Merkle proof verification for a payment.
+// Architecture doc §15.1: GET /api/v2/audit/payments/{payment_id}
+func (h *ChainHandler) VerifyAudit(c *gin.Context) {
+	paymentID := c.Param("payment_id")
+
+	result, err := h.svc.VerifyPaymentAudit(paymentID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+// GetBatch returns a specific chain batch.
+func (h *ChainHandler) GetBatch(c *gin.Context) {
+	batchID := c.Param("batch_id")
+
+	batch, err := h.svc.GetBatch(batchID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "batch not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, batch)
 }

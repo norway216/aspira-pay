@@ -1,7 +1,19 @@
-// Aspira Pay V2 — Core Engine Loop
-// Single Writer Principle: processes commands sequentially.
-// Architecture doc §4.7.1: Core Engine Loop.
-// Architecture doc §6.7.3: Engine Design Rules.
+// Aspira Pay V2 — Optimized Engine Core (§24)
+// Architecture doc §24: Recommended V2 Engine MVP.
+//
+// Optimized architecture (§5):
+//   Command Receiver → MPSC Ring Buffer → Engine Core Thread
+//     → In-memory Ledger (uint64 keys)
+//     → WAL Buffer (batch flush + checksum)
+//     → SPSC Event Ring Buffer → Async Publisher Thread
+//
+// Thread model (§16):
+//   Thread 1: Command Receiver (NATS consumer)
+//   Thread 2: Engine Core (single writer, deterministic)
+//   Thread 3: WAL Writer (batch flush)
+//   Thread 4: Event Publisher (async NATS output)
+//   Thread 5: Snapshot Writer (periodic)
+//   Thread 6: Metrics Reporter (Prometheus scrape)
 
 #pragma once
 
@@ -10,10 +22,14 @@
 #include "CommandQueue.h"
 #include "WAL.h"
 #include "Publisher.h"
+#include "EventRingBuffer.h"
+#include "EngineMetrics.h"
+#include "ObjectPool.h"
 #include <memory>
 #include <atomic>
 #include <thread>
 #include <unordered_set>
+#include <mutex>
 
 namespace aspira {
 namespace engine {
@@ -23,82 +39,104 @@ public:
     Engine();
     ~Engine();
 
-    // Initialize engine with WAL path and snapshot interval
-    bool init(const std::string& wal_path, int snapshot_interval_sec = 300);
+    // ── Lifecycle ────────────────────────────
 
-    // Start the engine processing loop (runs in background thread)
+    // Initialize with WAL path, snapshot interval, and optional config
+    bool init(const std::string& wal_path, int snapshot_interval_sec = 300,
+              const WalConfig& wal_config = WalConfig{});
+
+    // Start all engine threads
     void start();
 
-    // Stop the engine gracefully
+    // Graceful shutdown: final snapshot, flush WAL, drain events
     void stop();
 
-    // Submit a command to the engine (producer-side, thread-safe)
+    // ── Command Intake (§8) ──────────────────
+
+    // Submit a string-based command (from Go adapter, backward-compatible)
     bool submit(const PaymentCommand& cmd);
 
-    // Take a snapshot of current ledger state to WAL
+    // Submit a fast fixed-field command (§6.2)
+    bool submit_fast(const PaymentCommandFast& cmd);
+
+    // ── Snapshots (§12) ──────────────────────
+
+    // Take a full snapshot of current state
     void take_snapshot();
 
     // Restore from WAL on startup
     bool restore_from_wal();
 
-    // Get ledger reference (for balance queries)
+    // ── Accessors ────────────────────────────
+
     Ledger& ledger() { return ledger_; }
-
-    // Get publisher reference
     Publisher& publisher() { return publisher_; }
+    EngineMetrics& metrics() { return metrics_; }
 
-    // Engine statistics
-    uint64_t commands_processed() const { return commands_processed_; }
-    uint64_t commands_rejected() const { return commands_rejected_; }
-    uint64_t commands_duplicated() const { return commands_duplicated_; }
-    uint64_t events_published() const { return publisher_.total_published(); }
-    uint64_t last_snapshot_seq() const { return last_snapshot_seq_; }
     bool is_running() const { return running_; }
 
 private:
-    // Core processing loop
-    void run_loop();
+    // ── Threads (§16) ────────────────────────
+    void core_loop();        // Thread 2: Engine Core
+    void wal_flush_loop();   // Thread 3: WAL Writer
+    void event_publish_loop(); // Thread 4: Event Publisher
+    void snapshot_loop();    // Thread 5: Snapshot Writer
+    void metrics_loop();     // Thread 6: Metrics Reporter
 
-    // Process a single command
-    EngineResult process_command(const PaymentCommand& cmd);
+    // ── Command Processing (§17) ─────────────
+    EngineErrorCode process_command_fast(const PaymentCommandFast& cmd);
+    EngineExecutionResult build_result(const PaymentCommandFast& cmd, EngineErrorCode code, uint64_t latency_ns);
 
-    // Specific command handlers
-    EngineResult handle_freeze(const PaymentCommand& cmd);
-    EngineResult handle_execute(const PaymentCommand& cmd);
-    EngineResult handle_release(const PaymentCommand& cmd);
-    EngineResult handle_refund(const PaymentCommand& cmd);
-    EngineResult handle_settlement_batch(const PaymentCommand& cmd);
+    // ── Command Handlers ─────────────────────
+    EngineErrorCode handle_freeze(const PaymentCommandFast& cmd);
+    EngineErrorCode handle_execute(const PaymentCommandFast& cmd);
+    EngineErrorCode handle_release(const PaymentCommandFast& cmd);
+    EngineErrorCode handle_refund(const PaymentCommandFast& cmd);
+    EngineErrorCode handle_settlement_batch(const PaymentCommandFast& cmd);
 
-    // Generate and publish event
-    void emit_event(const PaymentCommand& cmd, const std::string& event_type,
+    // ── Event Emission ───────────────────────
+    void emit_event(const PaymentCommandFast& cmd, const std::string& event_type,
                     const std::string& result);
 
-    // Dedup check per architecture doc §9.1
-    bool is_duplicate(const std::string& request_id);
+    // ── Dedup (§13) ──────────────────────────
+    bool is_duplicate(uint64_t request_id_hash);
+    void record_dedup_result(uint64_t request_id_hash, EngineErrorCode code);
 
-    // Periodic snapshot worker
-    void snapshot_loop();
+    // ── Adapter Layer (§6.4) ─────────────────
+    PaymentCommandFast convert_to_fast(const PaymentCommand& cmd);
 
+    // ── Components ───────────────────────────
     Ledger ledger_;
     CommandQueue queue_;
     std::unique_ptr<WAL> wal_;
     Publisher publisher_;
-    std::unique_ptr<std::thread> worker_thread_;
+    EventRingBuffer event_ring_{4096};
+    EngineMetrics metrics_;
+
+    // ── Threads ──────────────────────────────
+    std::unique_ptr<std::thread> core_thread_;
+    std::unique_ptr<std::thread> wal_thread_;
+    std::unique_ptr<std::thread> publish_thread_;
     std::unique_ptr<std::thread> snapshot_thread_;
+    std::unique_ptr<std::thread> metrics_thread_;
     std::atomic<bool> running_{false};
-    std::atomic<uint64_t> commands_processed_{0};
-    std::atomic<uint64_t> commands_rejected_{0};
-    std::atomic<uint64_t> commands_duplicated_{0};
-    std::atomic<uint64_t> sequence_{0};
-    std::atomic<uint64_t> last_snapshot_seq_{0};
 
-    // Dedup set: store up to 1M recent request_ids (LRU-like)
-    // Architecture doc §9.1: same request_id → return previous result
-    static constexpr size_t MAX_DEDUP_SIZE = 1'000'000;
-    std::unordered_set<std::string> processed_requests_;
+    // ── Dedup Cache (§13.3) ──────────────────
+    // HashMap + LRU for 24h dedup window
+    struct DedupEntry {
+        uint64_t request_id_hash;
+        EngineErrorCode result;
+        uint64_t timestamp_ns;
+    };
+    static constexpr size_t MAX_DEDUP_SIZE = 10'000'000;  // §13.4
+    std::unordered_map<uint64_t, DedupEntry> dedup_cache_;
     std::mutex dedup_mutex_;
+    uint64_t dedup_evictions_{0};
 
+    // ── State ────────────────────────────────
+    std::atomic<uint64_t> sequence_{0};
     int snapshot_interval_sec_{300};
+    WalConfig wal_config_{};
 };
 
 } // namespace engine

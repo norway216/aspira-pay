@@ -96,6 +96,9 @@ func SetupRouter(cfg *RouterConfig) *gin.Engine {
 			protected.GET("/chain/blocks", chainH.ListBlocks)
 			protected.GET("/chain/blocks/:height", chainH.GetBlock)
 			protected.GET("/chain/audit/:payment_id", chainH.GetAuditTrail)
+			// §15: Merkle proof verification API
+			protected.GET("/chain/verify/:payment_id", chainH.VerifyAudit)
+			protected.GET("/chain/batches/:batch_id", chainH.GetBatch)
 
 			// Accounts (with FX conversion to user preferred currency)
 			acctH := NewAccountHandler(cfg.DB, cfg.FXSvc)
