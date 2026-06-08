@@ -66,7 +66,7 @@ func (s *PaymentService) CreatePayment(req payment.CreateRequest, idempotencyKey
 		}
 	}
 
-	// ── Step 1: KYC Check ──────────────────────────────────
+	// ── Step 1: KYC Check (+ pre-fetch for Risk) ────────────
 	sender, err := s.db.GetUserByID(req.SenderUserID)
 	if err != nil {
 		return nil, pkgerrors.NotFound("sender not found")
@@ -80,8 +80,11 @@ func (s *PaymentService) CreatePayment(req payment.CreateRequest, idempotencyKey
 		return nil, pkgerrors.New(pkgerrors.ErrCodeKYCPending, "sender KYC not approved")
 	}
 
-	// ── Step 2: Risk Assessment ────────────────────────────
-	riskResult, err := s.riskSvc.AssessPayment(req)
+	// Pre-fetch receiver once (Risk service needs it, avoids duplicate DB call)
+	receiver, _ := s.db.GetUserByID(req.ReceiverUserID)
+
+	// ── Step 2: Risk Assessment (pass pre-fetched data, avoids 5+ redundant DB queries) ──
+	riskResult, err := s.riskSvc.AssessPaymentWithContext(req, sender, kycProfile, receiver)
 	if err != nil {
 		return nil, fmt.Errorf("risk assessment failed: %w", err)
 	}

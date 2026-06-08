@@ -12,9 +12,10 @@ import (
 type RiskService struct {
 	db    *repository.DB
 	rules []risk.RiskRule
-	// Temporary request context for check function closures during assessment
-	senderUserID   string
-	receiverUserID string
+	// Cached context for the current assessment (set by AssessPaymentWithContext)
+	sender         *user.User
+	receiver       *user.User
+	kycProfile     *kyc.Profile
 	sourceAmount   int64
 	countryFrom    string
 	countryTo      string
@@ -29,13 +30,51 @@ func NewRiskService(db *repository.DB) *RiskService {
 }
 
 // AssessPayment evaluates all risk rules for a payment request.
+// Deprecated: prefer AssessPaymentWithContext to avoid redundant DB lookups.
+// Kept for backward compatibility with tests and external callers.
 func (s *RiskService) AssessPayment(req payment.CreateRequest) (*risk.RiskResult, error) {
-	// Store request data temporarily for use by check closures
-	s.senderUserID = req.SenderUserID
-	s.receiverUserID = req.ReceiverUserID
-	s.sourceAmount = req.SourceAmount
-	s.countryFrom = req.CountryFrom
-	s.countryTo = req.CountryTo
+	return s.assessInternal(req.SenderUserID, req.ReceiverUserID,
+		req.SourceAmount, req.CountryFrom, req.CountryTo,
+		nil, nil, nil)
+}
+
+// AssessPaymentWithContext evaluates risk rules using pre-fetched data.
+// This avoids redundant DB queries when the caller already has user/KYC objects.
+// The caller (PaymentService.CreatePayment) already fetches sender and KYC for
+// its own validation — passing them here eliminates 5+ redundant DB round-trips.
+func (s *RiskService) AssessPaymentWithContext(
+	req payment.CreateRequest,
+	sender *user.User,
+	senderKYC *kyc.Profile,
+	receiver *user.User,
+) (*risk.RiskResult, error) {
+	return s.assessInternal(req.SenderUserID, req.ReceiverUserID,
+		req.SourceAmount, req.CountryFrom, req.CountryTo,
+		sender, senderKYC, receiver)
+}
+
+// assessInternal is the shared implementation. If sender/kyc/receiver are nil,
+// they are fetched from DB (backward-compatible fallback).
+func (s *RiskService) assessInternal(
+	senderID, receiverID string,
+	amount int64, countryFrom, countryTo string,
+	sender *user.User, kycProfile *kyc.Profile, receiver *user.User,
+) (*risk.RiskResult, error) {
+	// Store context for check closures
+	s.sender = sender
+	s.receiver = receiver
+	s.kycProfile = kycProfile
+	s.sourceAmount = amount
+	s.countryFrom = countryFrom
+	s.countryTo = countryTo
+
+	// Fetch receiver on demand if not provided
+	if s.receiver == nil {
+		rcv, err := s.db.GetUserByID(receiverID)
+		if err == nil {
+			s.receiver = rcv
+		}
+	}
 
 	result := &risk.RiskResult{
 		Decision: risk.RiskPass,
@@ -63,7 +102,6 @@ func (s *RiskService) AssessPayment(req payment.CreateRequest) (*risk.RiskResult
 			result.Score += score
 			result.Reasons = append(result.Reasons, reason)
 
-			// Find the rule to check if it's blocking
 			for _, r := range s.rules {
 				if r.Name == check.name && r.Blocking {
 					result.Decision = risk.RiskReject
@@ -73,7 +111,6 @@ func (s *RiskService) AssessPayment(req payment.CreateRequest) (*risk.RiskResult
 		}
 	}
 
-	// Determine final decision
 	if result.Score >= 100 {
 		result.Decision = risk.RiskReject
 	} else if result.Score >= 50 {
@@ -83,45 +120,75 @@ func (s *RiskService) AssessPayment(req payment.CreateRequest) (*risk.RiskResult
 	return result, nil
 }
 
+// ── Check implementations — use pre-fetched data when available ──
+
 func (s *RiskService) checkKYCCompleted() (bool, string, int) {
-	u, err := s.db.GetUserByID(s.senderUserID)
+	// Use pre-fetched data if available (from AssessPaymentWithContext)
+	if s.sender != nil && s.kycProfile != nil {
+		if s.sender.Status != user.UserActive {
+			return true, "Sender has not completed KYC", 100
+		}
+		if s.kycProfile.KYCStatus != kyc.KYCApproved {
+			return true, "Sender KYC not approved", 100
+		}
+		return false, "", 0
+	}
+
+	// Fallback: fetch from DB (backward-compatible)
+	u, err := s.db.GetUserByID(s.senderUserID())
 	if err != nil || u.Status != user.UserActive {
 		return true, "Sender has not completed KYC", 100
 	}
-
-	kycProfile, err := s.db.GetKYCProfile(s.senderUserID)
+	kycProfile, err := s.db.GetKYCProfile(s.senderUserID())
 	if err != nil || kycProfile.KYCStatus != kyc.KYCApproved {
 		return true, "Sender KYC not approved", 100
 	}
-
 	return false, "", 0
 }
 
 func (s *RiskService) checkUserFrozen() (bool, string, int) {
-	u, err := s.db.GetUserByID(s.senderUserID)
-	if err != nil {
-		return true, "Sender user not found", 100
-	}
-	if u.IsFrozen() {
-		return true, "Sender account is frozen", 100
+	// Use pre-fetched sender
+	if s.sender != nil {
+		if s.sender.IsFrozen() {
+			return true, "Sender account is frozen", 100
+		}
+	} else {
+		u, err := s.db.GetUserByID(s.senderUserID())
+		if err != nil {
+			return true, "Sender user not found", 100
+		}
+		if u.IsFrozen() {
+			return true, "Sender account is frozen", 100
+		}
 	}
 
-	receiver, err := s.db.GetUserByID(s.receiverUserID)
-	if err != nil {
-		return true, "Receiver user not found", 100
-	}
-	if receiver.IsFrozen() {
-		return true, "Receiver account is frozen", 100
+	// Use pre-fetched receiver
+	if s.receiver != nil {
+		if s.receiver.IsFrozen() {
+			return true, "Receiver account is frozen", 100
+		}
+	} else {
+		receiver, err := s.db.GetUserByID(s.receiverUserID())
+		if err != nil {
+			return true, "Receiver user not found", 100
+		}
+		if receiver.IsFrozen() {
+			return true, "Receiver account is frozen", 100
+		}
 	}
 
 	return false, "", 0
 }
 
 func (s *RiskService) checkAmountLimit() (bool, string, int) {
-	u, _ := s.db.GetUserByID(s.senderUserID)
 	riskLevel := "LOW"
-	if u != nil {
-		riskLevel = u.RiskLevel
+	if s.sender != nil {
+		riskLevel = s.sender.RiskLevel
+	} else {
+		u, _ := s.db.GetUserByID(s.senderUserID())
+		if u != nil {
+			riskLevel = u.RiskLevel
+		}
 	}
 
 	limits := risk.LimitsByRiskLevel(riskLevel)
@@ -132,15 +199,19 @@ func (s *RiskService) checkAmountLimit() (bool, string, int) {
 }
 
 func (s *RiskService) checkDailyLimit() (bool, string, int) {
-	dailyTotal, err := s.db.GetDailyTotal(s.senderUserID)
+	dailyTotal, err := s.db.GetDailyTotal(s.senderUserID())
 	if err != nil {
-		return false, "", 0 // Don't block on DB error
+		return false, "", 0
 	}
 
-	u, _ := s.db.GetUserByID(s.senderUserID)
 	riskLevel := "LOW"
-	if u != nil {
-		riskLevel = u.RiskLevel
+	if s.sender != nil {
+		riskLevel = s.sender.RiskLevel
+	} else {
+		u, _ := s.db.GetUserByID(s.senderUserID())
+		if u != nil {
+			riskLevel = u.RiskLevel
+		}
 	}
 	limits := risk.LimitsByRiskLevel(riskLevel)
 
@@ -162,7 +233,7 @@ func (s *RiskService) checkRestrictedCountry() (bool, string, int) {
 }
 
 func (s *RiskService) checkHighFrequency() (bool, string, int) {
-	count, err := s.db.GetRecentTxCount(s.senderUserID, 60)
+	count, err := s.db.GetRecentTxCount(s.senderUserID(), 60)
 	if err != nil {
 		return false, "", 0
 	}
@@ -173,23 +244,43 @@ func (s *RiskService) checkHighFrequency() (bool, string, int) {
 }
 
 func (s *RiskService) checkNewUserLargeAmount() (bool, string, int) {
-	u, err := s.db.GetUserByID(s.senderUserID)
-	if err != nil {
+	if s.sender != nil {
+		if s.sender.CreatedAt.Unix() > 0 && s.sourceAmount > 100000 {
+			return true, "New user making large transaction", 60
+		}
 		return false, "", 0
 	}
 
-	// In production: check if user was created within last 24 hours
-	if u.CreatedAt.Unix() > 0 && s.sourceAmount > 100000 { // $1,000
+	u, err := s.db.GetUserByID(s.senderUserID())
+	if err != nil {
+		return false, "", 0
+	}
+	if u.CreatedAt.Unix() > 0 && s.sourceAmount > 100000 {
 		return true, "New user making large transaction", 60
 	}
 	return false, "", 0
 }
 
 func (s *RiskService) checkSanctionedCountry() (bool, string, int) {
-	// Same as restricted countries in Sandbox
 	restricted := risk.RestrictedCountries()
 	if restricted[s.countryFrom] || restricted[s.countryTo] {
 		return true, "Country under international sanctions", 100
 	}
 	return false, "", 0
+}
+
+// senderUserID returns the sender ID from the stored context state.
+func (s *RiskService) senderUserID() string {
+	if s.sender != nil {
+		return s.sender.UserID
+	}
+	return ""
+}
+
+// receiverUserID returns the receiver ID from the stored context state.
+func (s *RiskService) receiverUserID() string {
+	if s.receiver != nil {
+		return s.receiver.UserID
+	}
+	return ""
 }
