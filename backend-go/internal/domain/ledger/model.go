@@ -1,9 +1,11 @@
-// Package ledger defines the Ledger Entry and Account domain models.
+// Package ledger defines the V3.0 Ledger domain models (§5.5).
+// Introduces Voucher concept for proper double-entry accounting.
 package ledger
 
 import "time"
 
-// Direction indicates debit or credit in double-entry accounting.
+// ── Direction ──────────────────────────────────
+
 type Direction string
 
 const (
@@ -11,9 +13,83 @@ const (
 	DirectionCredit Direction = "CREDIT"
 )
 
-// Entry represents a single ledger entry (append-only).
-// Each entry is part of a double-entry pair: every debit must have
-// a corresponding credit of equal amount, ensuring 借贷平衡.
+// ── Account Types (§5.5.2) ─────────────────────
+
+type AccountType string
+
+const (
+	AccountUserAvailable    AccountType = "USER_AVAILABLE"
+	AccountUserFrozen       AccountType = "USER_FROZEN"
+	AccountMerchantSettlement AccountType = "MERCHANT_SETTLEMENT"
+	AccountPlatformFee      AccountType = "PLATFORM_FEE"
+	AccountChannelClearing  AccountType = "CHANNEL_CLEARING"
+	AccountFXGainLoss       AccountType = "FX_GAIN_LOSS"
+	AccountRefund           AccountType = "REFUND"
+	AccountReserve          AccountType = "RESERVE"
+)
+
+type OwnerType string
+
+const (
+	OwnerUser     OwnerType = "USER"
+	OwnerMerchant OwnerType = "MERCHANT"
+	OwnerSystem   OwnerType = "SYSTEM"
+	OwnerChannel  OwnerType = "CHANNEL"
+)
+
+// ── Account (§5.5.4) ───────────────────────────
+
+type Account struct {
+	ID               int64       `json:"-"`
+	AccountNo        string      `json:"account_no"`
+	OwnerType        OwnerType   `json:"owner_type"`
+	OwnerID          string      `json:"owner_id"`
+	AccountType      AccountType `json:"account_type"`
+	Currency         string      `json:"currency"`
+	Status           string      `json:"status"`
+	CreatedAt        time.Time   `json:"created_at"`
+	UpdatedAt        time.Time   `json:"updated_at"`
+}
+
+// ── Account Balance (§5.5.4) ────────────────────
+
+type AccountBalance struct {
+	AccountNo        string    `json:"account_no"`
+	AvailableBalance int64     `json:"available_balance"`
+	FrozenBalance    int64     `json:"frozen_balance"`
+	Currency         string    `json:"currency"`
+	Version          int64     `json:"version"`
+	UpdatedAt        time.Time `json:"updated_at"`
+}
+
+// ── Voucher (§5.5.4) ────────────────────────────
+
+type Voucher struct {
+	ID           int64     `json:"-"`
+	VoucherNo    string    `json:"voucher_no"`
+	BusinessType string    `json:"business_type"`
+	BusinessID   string    `json:"business_id"`
+	Status       string    `json:"status"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+// ── V3 Voucher Entry (§5.5.4) ───────────────────
+
+type VoucherEntry struct {
+	ID          int64     `json:"-"`
+	EntryID     string    `json:"entry_id"`
+	VoucherNo   string    `json:"voucher_no"`
+	AccountNo   string    `json:"account_no"`
+	Direction   Direction `json:"direction"`
+	Amount      int64     `json:"amount"`
+	Currency    string    `json:"currency"`
+	Description string    `json:"description,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+// ── Legacy Entry (backward compat) ──────────────
+// Used by existing ledger_repo.go and settlement_svc.go.
+
 type Entry struct {
 	ID           int64     `json:"-"`
 	EntryID      string    `json:"entry_id"`
@@ -28,50 +104,20 @@ type Entry struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
-// Account represents a financial account with balance tracking.
-type Account struct {
-	ID               int64     `json:"-"`
-	AccountID        string    `json:"account_id"`
-	UserID           string    `json:"user_id"`
-	Currency         string    `json:"currency"`
-	AvailableBalance int64     `json:"available_balance"`
-	FrozenBalance    int64     `json:"frozen_balance"`
-	SettledBalance   int64     `json:"settled_balance"`
-	Status           string    `json:"status"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
-}
+// ── Ledger Summary ──────────────────────────────
 
-// TotalBalance returns the sum of all balance components.
-func (a *Account) TotalBalance() int64 {
-	return a.AvailableBalance + a.FrozenBalance + a.SettledBalance
-}
-
-// CanDebit checks if there are sufficient available funds.
-func (a *Account) CanDebit(amount int64) bool {
-	return a.AvailableBalance >= amount
-}
-
-// IsSystemAccount checks if this is a platform internal account.
-func (a *Account) IsSystemAccount() bool {
-	return a.UserID == "system"
-}
-
-// LedgerSummary provides a summary of entries for a payment.
 type LedgerSummary struct {
-	PaymentID    string  `json:"payment_id"`
-	TotalDebit   int64   `json:"total_debit"`
-	TotalCredit  int64   `json:"total_credit"`
-	EntryCount   int     `json:"entry_count"`
-	IsBalanced   bool    `json:"is_balanced"`
-	Entries      []Entry `json:"entries"`
+	PaymentID   string  `json:"payment_id"`
+	TotalDebit  int64   `json:"total_debit"`
+	TotalCredit int64   `json:"total_credit"`
+	EntryCount  int     `json:"entry_count"`
+	IsBalanced  bool    `json:"is_balanced"`
+	Entries     []Entry `json:"entries"`
 }
 
 // CheckBalance verifies that total debits equal total credits per currency.
-// Cross-border payments involve different currencies, so balance must be checked
-// within each currency separately.
 func CheckBalance(entries []Entry) bool {
-	balances := make(map[string]int64) // currency -> net (debit - credit)
+	balances := make(map[string]int64)
 	for _, e := range entries {
 		switch e.Direction {
 		case DirectionDebit:
@@ -86,4 +132,29 @@ func CheckBalance(entries []Entry) bool {
 		}
 	}
 	return true
+}
+
+// ── Legacy Account (backward compat) ────────────
+
+type LegacyAccount struct {
+	ID               int64     `json:"-"`
+	AccountID        string    `json:"account_id"`
+	UserID           string    `json:"user_id"`
+	Currency         string    `json:"currency"`
+	AvailableBalance int64     `json:"available_balance"`
+	FrozenBalance    int64     `json:"frozen_balance"`
+	SettledBalance   int64     `json:"settled_balance"`
+	Status           string    `json:"status"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+}
+
+func (a *LegacyAccount) TotalBalance() int64 {
+	return a.AvailableBalance + a.FrozenBalance + a.SettledBalance
+}
+func (a *LegacyAccount) CanDebit(amount int64) bool {
+	return a.AvailableBalance >= amount
+}
+func (a *LegacyAccount) IsSystemAccount() bool {
+	return a.UserID == "system"
 }

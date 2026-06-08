@@ -1,7 +1,7 @@
 # Aspira Pay V2 — Default Configuration (Sandbox)
 server:
   port: 8080
-  mode: debug
+  mode: release
   read_timeout: 30s
   write_timeout: 30s
 

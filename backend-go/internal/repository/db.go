@@ -62,3 +62,24 @@ func (db *DB) Close() error {
 func (db *DB) BeginTx() (*sql.Tx, error) {
 	return db.DB.Begin()
 }
+
+// DashboardStats holds pre-aggregated dashboard metrics.
+type DashboardStats struct {
+	TotalPayments  int64
+	TotalUsers     int64
+	TotalBatches   int64
+	SystemStatus   string
+}
+
+// GetDashboardStats returns all dashboard metrics in a single query.
+// Replaces 3 separate List*(COUNT) calls with one aggregate SQL round-trip.
+func (db *DB) GetDashboardStats() (*DashboardStats, error) {
+	s := &DashboardStats{SystemStatus: "healthy"}
+	query := `
+		SELECT
+			(SELECT COUNT(*) FROM payment_orders),
+			(SELECT COUNT(*) FROM users),
+			(SELECT COUNT(*) FROM settlement_batches)`
+	err := db.QueryRow(query).Scan(&s.TotalPayments, &s.TotalUsers, &s.TotalBatches)
+	return s, err
+}

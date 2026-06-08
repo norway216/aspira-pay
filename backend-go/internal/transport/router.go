@@ -105,7 +105,7 @@ func SetupRouter(cfg *RouterConfig) *gin.Engine {
 			protected.GET("/accounts", acctH.GetMyAccounts)
 
 			// Admin Dashboard
-			adminH := NewAdminHandler(cfg.PaymentSvc, cfg.UserSvc, cfg.SettlementSvc)
+			adminH := NewAdminHandler(cfg.DB, cfg.PaymentSvc, cfg.UserSvc, cfg.SettlementSvc)
 			protected.GET("/admin/dashboard", adminH.GetDashboard)
 			protected.GET("/admin/audit-logs", adminH.GetAuditLogs)
 		}

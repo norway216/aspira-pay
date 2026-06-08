@@ -12,6 +12,9 @@ import (
 
 // IdempotencyMiddleware checks for idempotency key in request headers.
 // In production, this would check against a database.
+//
+// Optimization: Skip body hashing for GET/HEAD/OPTIONS requests since they
+// have no request body and are naturally idempotent per HTTP semantics.
 func IdempotencyMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		key := c.GetHeader("Idempotency-Key")
@@ -21,12 +24,18 @@ func IdempotencyMiddleware() gin.HandlerFunc {
 			c.Header("Idempotency-Key", key)
 		}
 
-		// Read and hash request body for idempotency check
-		bodyBytes, _ := io.ReadAll(c.Request.Body)
-		c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+		// GET/HEAD/OPTIONS are naturally idempotent — skip expensive body hash
+		method := c.Request.Method
+		skipHash := method == "GET" || method == "HEAD" || method == "OPTIONS"
 
-		bodyHash := crypto.SHA256(string(bodyBytes))
-		_ = bodyHash // In production: check against idempotency_keys table
+		var bodyHash string
+		if !skipHash {
+			bodyBytes, _ := io.ReadAll(c.Request.Body)
+			c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+			if len(bodyBytes) > 0 {
+				bodyHash = crypto.SHA256(string(bodyBytes))
+			}
+		}
 
 		// Store in context for handler use
 		c.Set("idempotency_key", key)
