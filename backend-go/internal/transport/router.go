@@ -23,6 +23,7 @@ type RouterConfig struct {
 	SettlementSvc *service.SettlementService
 	ChainSvc      *service.ChainService
 	CardSvc       *service.CardService
+	AdminSvc      *service.AdminService
 	JWT           *service.JWTManager
 }
 
@@ -65,6 +66,7 @@ func SetupRouter(cfg *RouterConfig) *gin.Engine {
 			protected.GET("/users/:id", userH.GetUser)
 			protected.GET("/users", userH.ListUsers)
 			protected.PUT("/users/:id/status", userH.UpdateStatus)
+			protected.POST("/users/me/pin", userH.SetPIN)
 
 			// KYC
 			kycH := NewKYCHandler(cfg.KYCSvc)
@@ -109,6 +111,8 @@ func SetupRouter(cfg *RouterConfig) *gin.Engine {
 			if cfg.CardSvc != nil {
 				cardH := NewCardHandler(cfg.CardSvc)
 				protected.POST("/cards/virtual", cardH.CreateVirtualCard)
+			protected.POST("/cards/apply", cardH.ApplyForCard)
+			protected.POST("/cards/:card_id/cancel", cardH.CancelCard)
 				protected.GET("/cards", cardH.ListCards)
 				protected.GET("/cards/:card_id", cardH.GetCard)
 				protected.POST("/cards/:card_id/freeze", cardH.FreezeCard)
@@ -122,6 +126,13 @@ func SetupRouter(cfg *RouterConfig) *gin.Engine {
 			adminH := NewAdminHandler(cfg.DB, cfg.PaymentSvc, cfg.UserSvc, cfg.SettlementSvc)
 			protected.GET("/admin/dashboard", adminH.GetDashboard)
 			protected.GET("/admin/audit-logs", adminH.GetAuditLogs)
+			// V2 Admin: audit logs, card review (§14)
+			if cfg.AdminSvc != nil {
+				adminV2 := NewAdminV2Handler(cfg.AdminSvc)
+				protected.GET("/admin/v2/audit-logs", adminV2.GetAuditLogs)
+				protected.GET("/admin/v2/pending-cards", adminV2.ListPendingCardApps)
+				protected.POST("/admin/v2/review-card", adminV2.ReviewCardApplication)
+			}
 		}
 	}
 

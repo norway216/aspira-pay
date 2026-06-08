@@ -4,6 +4,7 @@ export default function Layout() {
   const navItems = [
     { to: '/', label: 'Dashboard', icon: '📊' },
     { to: '/transactions', label: 'Transactions', icon: '💱' },
+    { to: '/cards', label: 'Cards', icon: '💳' },
     { to: '/users', label: 'Users', icon: '👥' },
     { to: '/ledger', label: 'Ledger', icon: '📒' },
     { to: '/audit', label: 'Audit Chain', icon: '⛓️' },

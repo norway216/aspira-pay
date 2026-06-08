@@ -233,8 +233,8 @@ type SpendQuoteResponse struct {
 // ── Create Card Request (§16.1) ──────────────────
 
 type CreateCardRequest struct {
-	OwnerType       string `json:"owner_type" binding:"required"`
-	OwnerID         string `json:"owner_id" binding:"required"`
+	OwnerType       string `json:"owner_type"`
+	OwnerID         string `json:"owner_id"`
 	CardNetwork     string `json:"card_network"`
 	CardForm        string `json:"card_form"`
 	DefaultCurrency string `json:"default_currency"`

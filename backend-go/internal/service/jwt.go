@@ -8,10 +8,11 @@ import (
 )
 
 // GenerateToken creates an access JWT token.
-func (m *JWTManager) GenerateToken(userID, username string) (string, error) {
+func (m *JWTManager) GenerateToken(userID, username string, isAdmin bool) (string, error) {
 	claims := jwt.MapClaims{
 		"user_id":  userID,
 		"username": username,
+		"is_admin": isAdmin,
 		"exp":      time.Now().Add(time.Duration(m.tokenExpiry) * time.Second).Unix(),
 		"iat":      time.Now().Unix(),
 	}

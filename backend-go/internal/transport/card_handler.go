@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/aspira/aspira-pay/internal/domain/card"
+	"github.com/aspira/aspira-pay/internal/domain/user"
 	"github.com/aspira/aspira-pay/internal/service"
 )
 
@@ -19,12 +20,22 @@ func NewCardHandler(svc *service.CardService) *CardHandler {
 }
 
 // CreateVirtualCard issues a new virtual card (§16.1).
+// Uses the authenticated user's ID as the owner (security: cannot create cards for others).
 func (h *CardHandler) CreateVirtualCard(c *gin.Context) {
 	var req card.CreateCardRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	// Force owner to be the authenticated user
+	userID := c.GetString("user_id")
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		return
+	}
+	req.OwnerID = userID
+	req.OwnerType = "CUSTOMER"
 
 	resp, err := h.svc.CreateVirtualCard(req)
 	if err != nil {
@@ -124,6 +135,32 @@ func (h *CardHandler) UnfreezeCard(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ACTIVE"})
+}
+
+// ApplyForCard handles KYC-based card application for regular users.
+func (h *CardHandler) ApplyForCard(c *gin.Context) {
+	userID := c.GetString("user_id")
+	var req user.CardApplicationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	resp, err := h.svc.ApplyForCard(userID, req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, resp)
+}
+
+// CancelCard cancels a card (owner only).
+func (h *CardHandler) CancelCard(c *gin.Context) {
+	userID := c.GetString("user_id")
+	if err := h.svc.CancelCard(userID, c.Param("card_id")); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "CANCELLED"})
 }
 
 // GetCardTransactions returns the transaction history for a card.

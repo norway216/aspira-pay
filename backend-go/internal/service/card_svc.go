@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/aspira/aspira-pay/internal/domain/card"
+	"github.com/aspira/aspira-pay/internal/domain/user"
 	"github.com/aspira/aspira-pay/internal/repository"
 	"github.com/aspira/aspira-pay/pkg/crypto"
 	pkgcard "github.com/aspira/aspira-pay/pkg/card"
@@ -28,8 +29,69 @@ func NewCardService(db *repository.DB, fxSvc *FXService) *CardService {
 
 // ── Card Issuing (§5.3) ──────────────────────────
 
-// CreateVirtualCard issues a new virtual card with test PAN.
-// Architecture doc §6.2: test_bin + random + Luhn.
+// ApplyForCard handles KYC-based card application (§5.3).
+// Regular users must provide KYC data. Max 5 cards per user.
+func (s *CardService) ApplyForCard(ownerID string, req user.CardApplicationRequest) (*card.CreateCardResponse, error) {
+	// Check 5-card limit
+	count, err := s.db.CountCardsByUser(ownerID)
+	if err != nil { return nil, fmt.Errorf("cannot count cards: %w", err) }
+	if count >= 5 {
+		return nil, pkgerrors.New("CARD_LIMIT", "maximum 5 cards per user")
+	}
+
+	network := card.CardNetwork(req.CardNetwork)
+	if network == "" { network = card.NetworkVisa }
+	currency := req.DefaultCurrency
+	if currency == "" { currency = "USD" }
+
+	testBINs := pkgcard.TestBINs()
+	bin := testBINs[string(network)]
+	if bin == "" { bin = "400000" }
+	pan := pkgcard.GenerateTestPAN(bin, 16)
+	last4 := pkgcard.MaskPAN(pan)
+	token := crypto.SHA256("card:" + pan + idgen.RequestID())
+
+	c := &card.Card{
+		CardID:          idgen.CardID(),
+		OwnerType:       "CUSTOMER",
+		OwnerID:         ownerID,
+		CardToken:       "tok_" + token[:32],
+		PANLast4:        last4,
+		CardNetwork:     network,
+		CardType:        card.TypeDebit,
+		CardForm:        card.FormVirtual,
+		ExpiryMonth:     int(time.Now().Month()),
+		ExpiryYear:      time.Now().Year() + 3,
+		Status:          card.StatusActive,
+		DefaultCurrency: currency,
+		DailyLimit:      500000,
+		MonthlyLimit:    5000000,
+		SingleTxLimit:   500000,
+	}
+
+	if err := s.db.CreateCard(c); err != nil {
+		return nil, fmt.Errorf("cannot create card: %w", err)
+	}
+
+	log.Printf("CardService: card %s issued for user %s (last4=%s, network=%s, %d/5 cards)",
+		c.CardID, ownerID, last4, network, count+1)
+	return &card.CreateCardResponse{
+		CardID: c.CardID, CardToken: c.CardToken, Last4: last4,
+		CardNetwork: string(network), Status: string(c.Status),
+	}, nil
+}
+
+// CancelCard cancels a card without affecting the user account.
+func (s *CardService) CancelCard(ownerID, cardID string) error {
+	c, err := s.db.GetCard(cardID)
+	if err != nil { return err }
+	if c.OwnerID != ownerID {
+		return pkgerrors.New(pkgerrors.ErrCodeForbidden, "card does not belong to this user")
+	}
+	return s.db.UpdateCardStatus(cardID, card.StatusCancelled)
+}
+
+// CreateVirtualCard issues a new virtual card with test PAN (admin/internal use).
 func (s *CardService) CreateVirtualCard(req card.CreateCardRequest) (*card.CreateCardResponse, error) {
 	network := card.CardNetwork(req.CardNetwork)
 	if network == "" {

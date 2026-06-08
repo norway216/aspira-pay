@@ -140,4 +140,14 @@ export const api = {
   // Chain
   getBlocks: () => request('/chain/blocks'),
   getAudit: (paymentId: string) => request(`/chain/audit/${paymentId}`),
+
+	// Card Payment Subsystem
+	request: (path: string, options?: RequestInit) => request(path, options),
+	getCards: () => request("/cards"),
+	getCard: (id: string) => request(`/cards/${id}`),
+	createCard: (data: any) => request("/cards/virtual", { method: "POST", body: JSON.stringify(data) }),
+	spendQuote: (cardId: string, data: any) => request(`/cards/${cardId}/quote-spend`, { method: "POST", body: JSON.stringify(data) }),
+	freezeCard: (cardId: string) => request(`/cards/${cardId}/freeze`, { method: "POST" }),
+	unfreezeCard: (cardId: string) => request(`/cards/${cardId}/unfreeze`, { method: "POST" }),
+	authorizeCard: (data: any) => request("/internal/card-authorizations", { method: "POST", body: JSON.stringify(data) }),
 }
