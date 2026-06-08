@@ -8,7 +8,7 @@ import (
 )
 
 // CreateAccount inserts a new account.
-func (db *DB) CreateAccount(a *ledger.Account) error {
+func (db *DB) CreateAccount(a *ledger.LegacyAccount) error {
 	query := `
 		INSERT INTO accounts (account_id, user_id, currency, available_balance, frozen_balance, settled_balance, status)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -21,8 +21,8 @@ func (db *DB) CreateAccount(a *ledger.Account) error {
 }
 
 // GetAccount retrieves an account by account_id.
-func (db *DB) GetAccount(accountID string) (*ledger.Account, error) {
-	a := &ledger.Account{}
+func (db *DB) GetAccount(accountID string) (*ledger.LegacyAccount, error) {
+	a := &ledger.LegacyAccount{}
 	query := `SELECT id, account_id, user_id, currency, available_balance, frozen_balance, settled_balance, status, created_at, updated_at
 		FROM accounts WHERE account_id = $1`
 	err := db.QueryRow(query, accountID).Scan(
@@ -37,7 +37,7 @@ func (db *DB) GetAccount(accountID string) (*ledger.Account, error) {
 }
 
 // GetAccountsByUser retrieves all accounts for a user.
-func (db *DB) GetAccountsByUser(userID string) ([]ledger.Account, error) {
+func (db *DB) GetAccountsByUser(userID string) ([]ledger.LegacyAccount, error) {
 	query := `SELECT id, account_id, user_id, currency, available_balance, frozen_balance, settled_balance, status, created_at, updated_at
 		FROM accounts WHERE user_id = $1 ORDER BY currency`
 	rows, err := db.Query(query, userID)
@@ -46,9 +46,9 @@ func (db *DB) GetAccountsByUser(userID string) ([]ledger.Account, error) {
 	}
 	defer rows.Close()
 
-	var accounts []ledger.Account
+	var accounts []ledger.LegacyAccount
 	for rows.Next() {
-		var a ledger.Account
+		var a ledger.LegacyAccount
 		if err := rows.Scan(
 			&a.ID, &a.AccountID, &a.UserID, &a.Currency,
 			&a.AvailableBalance, &a.FrozenBalance, &a.SettledBalance,
@@ -62,8 +62,8 @@ func (db *DB) GetAccountsByUser(userID string) ([]ledger.Account, error) {
 }
 
 // GetAccountByUserAndCurrency retrieves a specific currency account for a user.
-func (db *DB) GetAccountByUserAndCurrency(userID, currency string) (*ledger.Account, error) {
-	a := &ledger.Account{}
+func (db *DB) GetAccountByUserAndCurrency(userID, currency string) (*ledger.LegacyAccount, error) {
+	a := &ledger.LegacyAccount{}
 	query := `SELECT id, account_id, user_id, currency, available_balance, frozen_balance, settled_balance, status, created_at, updated_at
 		FROM accounts WHERE user_id = $1 AND currency = $2`
 	err := db.QueryRow(query, userID, currency).Scan(

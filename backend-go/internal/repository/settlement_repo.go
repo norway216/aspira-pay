@@ -95,6 +95,39 @@ func (db *DB) ListSettlementBatches(page, pageSize int) ([]settlement.Batch, int
 	return batches, total, nil
 }
 
+// CountLedgerEntriesByBatch returns the number of ledger entries for a batch.
+func (db *DB) CountLedgerEntriesByBatch(batchID string) (int64, error) {
+	var count int64
+	err := db.QueryRow(`SELECT COUNT(*) FROM ledger_entries WHERE payment_id IN
+		(SELECT payment_id FROM settlement_details WHERE batch_id = $1)`, batchID).Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+// CountChannelReceiptsByBatch returns the number of channel receipts for a batch.
+func (db *DB) CountChannelReceiptsByBatch(batchID string) (int64, error) {
+	var count int64
+	err := db.QueryRow(`SELECT COUNT(*) FROM channel_receipts WHERE order_id IN
+		(SELECT order_id FROM settlement_details WHERE batch_id = $1)`, batchID).Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+// CountChainProofsByBatch returns the number of chain proofs for a batch.
+func (db *DB) CountChainProofsByBatch(batchID string) (int64, error) {
+	var count int64
+	err := db.QueryRow(`SELECT COUNT(*) FROM chain_events WHERE payment_id IN
+		(SELECT payment_id FROM settlement_details WHERE batch_id = $1)`, batchID).Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
 // GetOpenSettlementBatch gets or creates an open batch for a currency.
 func (db *DB) GetOpenSettlementBatch(currency string) (*settlement.Batch, error) {
 	b := &settlement.Batch{}
