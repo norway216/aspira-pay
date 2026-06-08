@@ -121,3 +121,19 @@ func (db *DB) CountCardsByUser(userID string) (int, error) {
 	err := db.QueryRow(`SELECT COUNT(*) FROM cards WHERE owner_id = $1 AND status != 'CANCELLED'`, userID).Scan(&count)
 	return count, err
 }
+
+// EnsureWalletAccount creates a wallet or seeds balance if it exists.
+func (db *DB) EnsureWalletAccount(userID, currency string, amount int64) {
+	db.Exec(`INSERT INTO accounts (account_id, user_id, currency, available_balance, status)
+		VALUES ($1, $2, $3, $4, 'NORMAL')
+		ON CONFLICT (user_id, currency) DO UPDATE SET available_balance = accounts.available_balance + $4`,
+		"acc_"+userID[:8]+"_"+currency, userID, currency, amount)
+}
+
+// EnsureKYCApproved creates an approved KYC profile for sandbox users.
+func (db *DB) EnsureKYCApproved(userID, fullName, nationality, dob string) {
+	db.Exec(`INSERT INTO kyc_profiles (user_id, full_name, nationality, date_of_birth, document_type, document_number_hash, document_hash, address_hash, kyc_status, risk_level)
+		VALUES ($1, $2, $3, CASE WHEN $4 = '' THEN NULL ELSE $4 END, 'passport', 'sandbox_auto', 'sandbox_auto', 'sandbox_auto', 'APPROVED', 'LOW')
+		ON CONFLICT DO NOTHING`,
+		userID, fullName, nationality, dob)
+}

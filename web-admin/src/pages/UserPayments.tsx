@@ -6,7 +6,8 @@ export default function UserPayments({ userId, token }: { userId: string; token:
   const [showNew, setShowNew] = useState(false)
   const [error, setError] = useState('')
   const h = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
-  const [form, setForm] = useState({ sender_user_id: userId, receiver_user_id: '', source_currency: 'USD', target_currency: 'EUR', source_amount: 0 })
+  useEffect(() => { setForm(f => ({ ...f, sender_user_id: userId })) }, [userId])
+  const [form, setForm] = useState({ sender_user_id: '', receiver_user_id: '', source_currency: 'USD', target_currency: 'EUR', source_amount: 0 })
 
   const loadPayments = useCallback(async () => {
     try {

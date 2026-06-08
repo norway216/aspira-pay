@@ -14,19 +14,18 @@ import UserCards from './pages/UserCards'
 import UserPayments from './pages/UserPayments'
 
 export default function App() {
-  const [auth, setAuth] = useState<{ token: string; isAdmin: boolean; userId: string } | null>(null)
+  const [auth, setAuth] = useState<{ token: string; isAdmin: boolean; userId: string; username: string } | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const tok = localStorage.getItem('auth_token')
     if (tok) {
-      // Verify token is still valid
       fetch('/api/v2/users/me', { headers: { Authorization: `Bearer ${tok}` } })
         .then(r => r.json())
         .then(d => {
           if (d.user_id) {
-            const isAdmin = d.admin_key?.startsWith('aspira-') || d.status === 'ACTIVE'
-            setAuth({ token: tok, isAdmin: !!isAdmin, userId: d.user_id })
+            const isAdmin = !!(d.admin_key && d.admin_key.startsWith('aspira-'))
+            setAuth({ token: tok, isAdmin, userId: d.user_id, username: d.username })
           } else {
             localStorage.removeItem('auth_token')
           }
@@ -39,7 +38,7 @@ export default function App() {
   }, [])
 
   const handleLogin = (token: string, isAdmin: boolean, userId: string) => {
-    setAuth({ token, isAdmin, userId })
+    setAuth({ token, isAdmin, userId, username: '' })
   }
 
   if (loading) {
