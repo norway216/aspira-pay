@@ -132,8 +132,16 @@ func (db *DB) EnsureWalletAccount(userID, currency string, amount int64) {
 
 // EnsureKYCApproved creates an approved KYC profile for sandbox users.
 func (db *DB) EnsureKYCApproved(userID, fullName, nationality, dob string) {
+	// Check if KYC already exists
+	var count int
+	db.QueryRow(`SELECT COUNT(*) FROM kyc_profiles WHERE user_id = $1`, userID).Scan(&count)
+	if count > 0 {
+		db.Exec(`UPDATE kyc_profiles SET kyc_status = 'APPROVED' WHERE user_id = $1`, userID)
+		return
+	}
+	dobVal := interface{}(nil)
+	if dob != "" { dobVal = dob }
 	db.Exec(`INSERT INTO kyc_profiles (user_id, full_name, nationality, date_of_birth, document_type, document_number_hash, document_hash, address_hash, kyc_status, risk_level)
-		VALUES ($1, $2, $3, CASE WHEN $4 = '' THEN NULL ELSE $4 END, 'passport', 'sandbox_auto', 'sandbox_auto', 'sandbox_auto', 'APPROVED', 'LOW')
-		ON CONFLICT DO NOTHING`,
-		userID, fullName, nationality, dob)
+		VALUES ($1, $2, $3, $4, 'passport', 'sandbox_auto', 'sandbox_auto', 'sandbox_auto', 'APPROVED', 'LOW')`,
+		userID, fullName, nationality, dobVal)
 }
