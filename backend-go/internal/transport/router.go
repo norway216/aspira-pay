@@ -22,6 +22,7 @@ type RouterConfig struct {
 	PaymentSvc    *service.PaymentService
 	SettlementSvc *service.SettlementService
 	ChainSvc      *service.ChainService
+	CardSvc       *service.CardService
 	JWT           *service.JWTManager
 }
 
@@ -103,6 +104,19 @@ func SetupRouter(cfg *RouterConfig) *gin.Engine {
 			// Accounts (with FX conversion to user preferred currency)
 			acctH := NewAccountHandler(cfg.DB, cfg.FXSvc)
 			protected.GET("/accounts", acctH.GetMyAccounts)
+
+			// Card Payment Subsystem
+			if cfg.CardSvc != nil {
+				cardH := NewCardHandler(cfg.CardSvc)
+				protected.POST("/cards/virtual", cardH.CreateVirtualCard)
+				protected.GET("/cards", cardH.ListCards)
+				protected.GET("/cards/:card_id", cardH.GetCard)
+				protected.POST("/cards/:card_id/freeze", cardH.FreezeCard)
+				protected.POST("/cards/:card_id/unfreeze", cardH.UnfreezeCard)
+				protected.POST("/cards/:card_id/quote-spend", cardH.SpendQuote)
+				protected.GET("/cards/:card_id/transactions", cardH.GetCardTransactions)
+				protected.POST("/internal/card-authorizations", cardH.AuthorizeCard)
+			}
 
 			// Admin Dashboard
 			adminH := NewAdminHandler(cfg.DB, cfg.PaymentSvc, cfg.UserSvc, cfg.SettlementSvc)
