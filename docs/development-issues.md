@@ -1563,3 +1563,189 @@ func (s *PaymentService) checkIdempotency(key, requestHash string) (*payment.Cre
 4. **不能只靠"之前能跑"判断代码正确**：旧二进制没有新代码，两者行为完全不同
 5. **排查方法**：日志缺堆栈 → 加 `debug.Stack()` → 精确定位行号 → 读源码找到 nil 访问
 | 连接泄漏风险 | 无生命周期管理 | 30min 回收 |
+
+
+## 17. Aspira Pay V2 vs V3 架构对比
+
+### 日期
+
+2026-06-08
+
+### 概述
+
+系统经历了 V2（面向个人用户的 Wise 风格 MVP）和 V3（面向 B2B/B2B2C 的生产级金融基础设施）两个架构版本的迭代。以下是完整对比。
+
+### 文档定位
+
+| 维度 | V2 | V3 |
+|------|-----|-----|
+| **文档名称** | aspirapay_crossborder_payment_full_architecture_v2.md | aspira_pay_cross_border_payment_clearing_architecture.md |
+| **定位** | 个人用户 + 管理员 | B2B / B2B2C + 商户 + 银行合作方 + 审计方 |
+| **风格参考** | Wise 个人银行 | 金融基础设施 |
+| **目标** | MVP 快速可用 | 生产级、可监管、可审计 |
+| **版本号** | v2.0 | V3.0 Mature |
+
+### 架构层次对比
+
+| 层次 | V2 | V3 |
+|------|-----|-----|
+| **用户层** | Web App + Admin Console | Web + Mobile + Admin + Open API + Merchant Portal + Risk Console |
+| **网关** | HTTPS / JWT / RateLimit | + mTLS / Ed25519 / HMAC Signature / WAF / IP Allowlist |
+| **业务服务** | User, Auth, KYC, Card, Wallet, FX, Payment, Risk (8) | + Notification, Admin Service, Compliance Service (11) |
+| **核心交易** | Transaction Engine + Ledger + Clearing + Settlement | C++ Core 拆分为 FX / Fee / Route / Risk / Ledger / Reconciliation / Merkle 7 个引擎 |
+| **事件总线** | Kafka / NATS | + Dead Letter Queue + 30+ Topics |
+| **存储** | PostgreSQL + Redis | + MinIO / S3 + Elasticsearch / Loki |
+| **区块链** | 无 | Aspira Consortium Chain (Fabric / Tendermint / CometBFT) |
+| **部署** | Docker Compose 单机 | Kubernetes 多可用区 + Helm + ArgoCD |
+
+### 用户角色对比
+
+| V2 | V3 |
+|------|-----|
+| 普通用户 (personal) | 普通用户 (personal) |
+| 企业用户 (business) | 企业用户 (business) + 企业成员 + 权限细分 |
+| 管理员 (admin) 二元区分 | 管理员分 4 级：KYC 审核 / 风控 / 运营 / 财务清算 |
+| - | 超级管理员 (super_admin) |
+| 系统服务账号 | 系统服务账号 (service_account) |
+
+### 权限模型对比
+
+| V2 | V3 |
+|------|-----|
+| `admin_key` 前缀检测 (`aspira-xxx`) | RBAC 角色表 (users → roles → permissions) |
+| JWT `is_admin` 布尔字段 | ABAC 条件规则（"KYC 未通过不能支付"等） |
+| 简单二元 | 支持四眼原则、双人审批、敏感操作二次确认 |
+
+### 支付状态机对比
+
+| V2 (12 状态) | V3 (16 状态) |
+|-------------|-------------|
+| created | CREATED |
+| quoted | QUOTE_LOCKED |
+| pending_risk_check | COMPLIANCE_PRECHECKED |
+| risk_rejected | RISK_REJECTED |
+| pending_user_confirm | - |
+| funds_frozen | PAYMENT_PENDING |
+| processing | PAYMENT_EXECUTING |
+| - | PAYMENT_CONFIRMED |
+| pending_clearing | - |
+| settled | SETTLEMENT_PROOFED |
+| - | RECONCILED |
+| - | CLOSED |
+| failed | PAYMENT_FAILED |
+| cancelled | CANCELLED |
+| refunded | REFUND_PENDING → REFUNDED |
+| reversed | - |
+| - | DISPUTED / FROZEN / MANUAL_REVIEW |
+
+### 银行卡模块对比
+
+| V2 | V3 |
+|------|-----|
+| 虚拟卡 / 实体卡 / 外部卡绑定 | 同 + 发卡处理商 + BIN Sponsor + Tokenization |
+| 卡状态：pending/active/frozen/lost/cancelled | 同 + expired |
+| 基础 KYC 申请 (full_name/nationality/dob) | + document_type/document_number/document_expiry/address |
+| 5 张卡上限 | 同 |
+| 管理员审核 | 同 + 风险等级检查 + 发卡地区支持检查 |
+
+### 账本系统对比
+
+| V2 | V3 |
+|------|-----|
+| 双分录账本 (ledger_entries) | 双分录 + Voucher 凭证系统 (ledger_vouchers) |
+| 基础账户 (accounts) | 8 种账户类型：USER_AVAILABLE / USER_FROZEN / MERCHANT_SETTLEMENT / PLATFORM_FEE / CHANNEL_CLEARING / FX_GAIN_LOSS / REFUND / RESERVE |
+| 余额直接更新 | 原子版本号扣减 (account_balances.version) + 溢出检测 |
+| 无钱包概念 | wallet_accounts 独立钱包表 |
+
+### 清算结算对比
+
+| V2 | V3 |
+|------|-----|
+| 基础清算批次 | T+0 / T+1 / T+2 + 按商户/通道/币种/国家清算 |
+| 4 个批次状态 (OPEN/CLOSED/SETTLED/FAILED) | 9 个批次状态 (BATCH_CREATED → BATCH_CALCULATED → BATCH_APPROVED → SETTLEMENT_INSTRUCTED → SETTLEMENT_PROCESSING → SETTLEMENT_CONFIRMED → RECONCILED → BATCH_CLOSED → BATCH_FAILED) |
+| 内部对账 | **三账对账**：内部订单账 + 支付通道回执 + 链上状态 |
+| - | 6 种异常处理：冲正/事件回放/重试写链/链上恢复/冻结审核/阻断清算 |
+
+### 风控系统对比
+
+| V2 | V3 |
+|------|-----|
+| 8 条规则 (KYC/Freeze/Amount/Daily/Country/Frequency/NewUser/Sanctions) | 10 个风险维度 + Redis 实时计数 |
+| 3 种动作 (ALLOW/REJECT/REVIEW) | 6 种动作 (ALLOW/REJECT/REVIEW/LIMIT/FREEZE/STEP_UP_AUTH) |
+| Go 实时规则引擎 | + C++ 高性能预检查 + Python 可选模型训练 |
+
+### 区块链对比
+
+| V2 | V3 |
+|------|-----|
+| ❌ 无 | ✅ Aspira Consortium Chain |
+| - | 10 个链上合约：DIDRegistry / MerchantRegistry / QuoteCommitment / OrderRegistry / PaymentStateMachine / SettlementProofRegistry / AuditLedger / DisputeResolution / RefundRegistry / MerkleAnchor |
+| - | 8 种参与节点：Core / Bank / PSP / FX / Liquidity / Auditor / Regulator / Disaster Recovery |
+
+### 运维能力对比
+
+| V2 | V3 |
+|------|-----|
+| Docker Compose 单机 | Kubernetes 多副本 + Helm + ArgoCD |
+| 基础日志 | OpenTelemetry + Jaeger + ELK / Loki + 结构化日志字段 |
+| Prometheus 指标 | + 告警规则 + P95/P99 监控 + 支付成功率告警 |
+| 无灾备 | PostgreSQL 主从 + 异地备份 + PITR + 混沌测试 |
+| 无熔断 | 服务熔断 + 限流 + 通道降级 + 主动轮询 |
+
+### C++ 引擎对比
+
+| V2 | V3 |
+|------|-----|
+| 单一交易引擎 | 7 个子引擎：FX / Fee / Route / Risk / Ledger / Reconciliation / Merkle |
+| 基础 WAL | + 校验和 (XXH64) + 批量刷新 + 快照恢复 + 配置化 FlushPolicy |
+| Go 进程内 HTTP 调用 | gRPC / Protobuf / Shared Memory / Unix Domain Socket |
+| 基础 5 线程 | 6 线程：CommandReceiver / EngineCore / WALWriter / EventPublisher / SnapshotWriter / MetricsReporter |
+| string 账本键 | uint64_t 账本键 + 溢出检测 + HotAccountBalance cache-line 对齐 |
+
+### 当前实现状态
+
+| 模块 | V2 状态 | V3 状态 |
+|------|---------|---------|
+| 用户注册/登录/KYC | ✅ 完整 | ✅ 完整 |
+| 管理员/普通用户分离 | ✅ 完整 | ✅ 完整 (admin_key) |
+| 多币种钱包 | ✅ 完整 | ✅ 完整 + wallet_accounts 表 |
+| 虚拟卡申请/管理 | ✅ 完整 | ✅ 完整 |
+| 外部卡绑定 | ✅ 表+API | ✅ 表+API |
+| 跨境支付 | ✅ 完整 | ✅ V3 状态机 |
+| 双分录账本 | ✅ 基础 | ✅ Voucher 模型已建 |
+| 清算批次 | ✅ 基础 | ✅ 9 状态 |
+| 三账对账 | ❌ | ✅ 骨架代码 |
+| 管理员审计日志 | ✅ 完整 | ✅ 完整 |
+| 登录限流 | ✅ 完整 | ✅ 完整 |
+| C++ 引擎优化 | - | ✅ 6 线程 + SPSC + Fast 命令 |
+| 联盟链 Hash Chain | - | ✅ Merkle + Ed25519 签名 |
+| PaymentConnector 接口 | - | ✅ SimulatedChannel |
+| 手续费配置 | ✅ 默认规则 | ✅ fee_rules 表 |
+| Kubernetes 部署 | ❌ | ❌ 待部署 |
+| gRPC 通信 | ❌ | ❌ 待实现 |
+| MinIO/S3 对象存储 | ❌ | ❌ 待集成 |
+| 商户后台 (Merchant Portal) | ❌ | ❌ 待开发 |
+| 风控后台 (Risk Console) | ❌ | ❌ 待开发 |
+
+### 开发路线建议
+
+**已完成 (Phase 1-2)：**
+- Go API 网关 + 用户/支付/卡/钱包/风控服务
+- C++ 高性能交易引擎 (6 线程 + Fast 命令)
+- PostgreSQL 双分录账本 + Voucher 凭证
+- 内部 Hash Chain + Merkle + Ed25519 审计
+- Web 管理后台 + 用户前台
+
+**下一步 (Phase 3-4)：**
+- 三账对账完整实现
+- PaymentConnector 对接真实银行/PSP
+- gRPC 替换 HTTP 内部通信
+- Redis 实时风控计数
+- Kubernetes + Helm 部署
+
+**远期 (Phase 5-6)：**
+- Aspira Consortium Chain (Fabric/Tendermint)
+- 商户后台 (Merchant Portal) + 风控后台 (Risk Console)
+- MinIO/S3 加密对象存储
+- HSM/KMS 密钥管理
+- 多可用区灾备 + 混沌测试
