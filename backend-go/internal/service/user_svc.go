@@ -68,6 +68,19 @@ func (s *UserService) Register(req user.RegisterRequest) (*user.User, error) {
 	if err := s.db.CreateUser(u); err != nil {
 		return nil, fmt.Errorf("cannot create user: %w", err)
 	}
+
+	// Sandbox: auto-create USD wallet for new users
+	s.db.EnsureWalletAccount(u.UserID, "USD", 1000000)
+	s.db.EnsureWalletAccount(u.UserID, "EUR", 500000)
+	s.db.EnsureWalletAccount(u.UserID, "JPY", 50000000)
+
+	// Sandbox: auto-create KYC profile + auto-activate
+	s.db.EnsureKYCApproved(u.UserID, req.FullName, req.Nationality, req.DateOfBirth)
+	if u.Status == user.UserPendingKYC {
+		s.db.UpdateUserStatus(u.UserID, user.UserActive)
+		u.Status = user.UserActive
+	}
+
 	return u, nil
 }
 
