@@ -71,6 +71,16 @@ func ChainTxID() string {
 	return fmt.Sprintf("chtx_%s", randomStr(16))
 }
 
+// CardID generates a card ID: card_{YYYMMDD}_{random6}
+func CardID() string {
+	return fmt.Sprintf("card_%s_%s", time.Now().Format("20060102"), randomStr(6))
+}
+
+// AuthID generates a card authorization ID: auth_{YYYMMDD}_{random6}
+func AuthID() string {
+	return fmt.Sprintf("auth_%s_%s", time.Now().Format("20060102"), randomStr(6))
+}
+
 // SequenceID generates a monotonically increasing sequence ID.
 // For C++ engine command ordering.
 type Sequencer struct {

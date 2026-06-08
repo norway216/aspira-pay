@@ -87,6 +87,9 @@ func main() {
 
 	paymentSvc := service.NewPaymentService(db, kycSvc, riskSvc, fxSvc, settlementSvc, chainSvc)
 
+	// Card Payment Subsystem (§5.1)
+	cardSvc := service.NewCardService(db, fxSvc)
+
 	log.Println("All services initialized")
 
 	// Setup router
@@ -99,6 +102,7 @@ func main() {
 		PaymentSvc:    paymentSvc,
 		SettlementSvc: settlementSvc,
 		ChainSvc:      chainSvc,
+		CardSvc:       cardSvc,
 		JWT:           jwtMgr,
 	})
 
