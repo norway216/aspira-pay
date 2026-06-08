@@ -37,7 +37,8 @@ func (h *UserHandler) Register(c *gin.Context) {
 		"user_id":    u.UserID,
 		"username":   u.Username,
 		"email":      u.Email,
-		"status":     u.Status,
+		"is_admin":   u.IsAdmin(),
+			"status":     u.Status,
 		"risk_level": u.RiskLevel,
 	})
 }
@@ -114,4 +115,19 @@ func (h *UserHandler) UpdateStatus(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "updated"})
+}
+
+// SetPIN sets the transaction PIN for the current user.
+func (h *UserHandler) SetPIN(c *gin.Context) {
+	userID := c.GetString("user_id")
+	var req user.SetPINRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := h.svc.SetTransactionPIN(userID, req.PIN); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "pin_set"})
 }

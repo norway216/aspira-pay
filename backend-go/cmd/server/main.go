@@ -89,6 +89,7 @@ func main() {
 
 	// Card Payment Subsystem (§5.1)
 	cardSvc := service.NewCardService(db, fxSvc)
+	adminSvc := service.NewAdminService(db)
 
 	log.Println("All services initialized")
 
@@ -103,6 +104,7 @@ func main() {
 		SettlementSvc: settlementSvc,
 		ChainSvc:      chainSvc,
 		CardSvc:       cardSvc,
+		AdminSvc:      adminSvc,
 		JWT:           jwtMgr,
 	})
 
