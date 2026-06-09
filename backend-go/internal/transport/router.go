@@ -23,6 +23,7 @@ type RouterConfig struct {
 	SettlementSvc *service.SettlementService
 	ChainSvc      *service.ChainService
 	CardSvc       *service.CardService
+	TransferSvc   *service.TransferService
 	AdminSvc      *service.AdminService
 	JWT           *service.JWTManager
 }
@@ -107,6 +108,28 @@ func SetupRouter(cfg *RouterConfig) *gin.Engine {
 			acctH := NewAccountHandler(cfg.DB, cfg.FXSvc)
 			protected.GET("/accounts", acctH.GetMyAccounts)
 
+		// V4 Transfer + Payment Links (§5, §6)
+		if cfg.TransferSvc != nil {
+			trfH := NewTransferHandler(cfg.TransferSvc)
+			protected.POST("/v4/transfer/resolve-recipient", trfH.ResolveRecipient)
+			protected.POST("/v4/transfer/quote", trfH.CreateQuote)
+			protected.POST("/v4/transfer/confirm", trfH.ConfirmTransfer)
+			protected.GET("/v4/transfer/history", trfH.ListTransfers)
+			protected.GET("/v4/transfer/contacts", trfH.ListContacts)
+			protected.POST("/v4/payment-links", trfH.CreatePaymentLink)
+		// §6.7.2: Public payment link query (no auth required)
+		api.GET("/v4/payment-links/public/:token", func(c *gin.Context) {
+			if cfg.TransferSvc != nil {
+				NewTransferHandler(cfg.TransferSvc).GetPaymentLinkPublic(c)
+			} else {
+				c.JSON(404, gin.H{"error": "not available"})
+			}
+		})
+
+			protected.POST("/v4/payment-links/:payment_link_id/pay", trfH.PayPaymentLink)
+			protected.POST("/v4/payment-links/:payment_link_id/cancel", trfH.CancelPaymentLink)
+			protected.GET("/v4/payment-links", trfH.ListPaymentLinks)
+		}
 			// Card Payment Subsystem
 			if cfg.CardSvc != nil {
 				cardH := NewCardHandler(cfg.CardSvc)

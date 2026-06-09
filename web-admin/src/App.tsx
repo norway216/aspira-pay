@@ -12,6 +12,7 @@ import Login from './pages/Login'
 import UserDashboard from './pages/UserDashboard'
 import UserCards from './pages/UserCards'
 import UserPayments from './pages/UserPayments'
+import UserTransfer from './pages/UserTransfer'
 
 export default function App() {
   const [auth, setAuth] = useState<{ token: string; isAdmin: boolean; userId: string; username: string } | null>(null)
@@ -66,6 +67,7 @@ export default function App() {
       ) : (
         <Route element={<UserLayout />}>
           <Route path="/" element={<UserDashboard userId={auth.userId} token={auth.token} />} />
+          <Route path="/transfer" element={<UserTransfer userId={auth.userId} token={auth.token} />} />
           <Route path="/cards" element={<UserCards userId={auth.userId} token={auth.token} />} />
           <Route path="/payments" element={<UserPayments userId={auth.userId} token={auth.token} />} />
           <Route path="*" element={<Navigate to="/" />} />

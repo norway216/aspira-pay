@@ -50,6 +50,7 @@ export default function UserLayout() {
         <nav className="flex-1 p-3 space-y-1">
           {[
             { to: '/', label: 'Dashboard', icon: '📊' },
+            { to: '/transfer', label: 'Transfer', icon: '💸' },
             { to: '/cards', label: 'My Cards', icon: '💳' },
             { to: '/payments', label: 'Payments', icon: '💱' },
           ].map(item => (
