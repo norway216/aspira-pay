@@ -23,6 +23,8 @@ type PaymentService struct {
 	db            *repository.DB
 	kycSvc        *KYCService
 	riskSvc       *RiskService
+	notifSvc      *NotificationService // V3: payment status notifications
+	webhookSvc    *WebhookService      // V3: merchant webhook delivery
 	fxSvc         *FXService
 	settlementSvc *SettlementService
 	chainSvc      *ChainService
@@ -32,10 +34,12 @@ type PaymentService struct {
 func NewPaymentService(
 	db *repository.DB, kycSvc *KYCService, riskSvc *RiskService,
 	fxSvc *FXService, settlementSvc *SettlementService, chainSvc *ChainService,
+	notifSvc *NotificationService, webhookSvc *WebhookService,
 ) *PaymentService {
 	return &PaymentService{
 		db:            db, kycSvc: kycSvc, riskSvc: riskSvc,
 		fxSvc:         fxSvc, settlementSvc: settlementSvc, chainSvc: chainSvc,
+		notifSvc:      notifSvc, webhookSvc: webhookSvc,
 		connector:     NewSimulatedChannel("sandbox", 1.0),
 	}
 }
@@ -265,8 +269,41 @@ func (s *PaymentService) runSaga(paymentID string) {
 
 		s.db.UpdatePaymentStatus(paymentID, step.targetStatus)
 		completedSteps = append(completedSteps, i)
+
+		// V3: Notify on key state transitions
+		s.notifyIfNeeded(order, step.targetStatus)
 	}
 	log.Printf("Saga %s: completed ✓", paymentID)
+
+	// V3: Final webhook notification
+	s.dispatchWebhook(paymentID, "payment.completed")
+}
+
+// notifyIfNeeded sends user notification on key state changes.
+func (s *PaymentService) notifyIfNeeded(order *payment.Order, status payment.PaymentStatus) {
+	switch status {
+	case payment.PaymentConfirmed, payment.PaymentFailed, payment.PaymentClosed:
+		if s.notifSvc != nil {
+			s.notifSvc.NotifyPaymentStatus(order.SenderUserID, order.PaymentID, string(status))
+		}
+	}
+}
+
+// dispatchWebhook sends webhook to registered merchant endpoints.
+func (s *PaymentService) dispatchWebhook(paymentID, eventType string) {
+	order, err := s.db.GetPaymentOrder(paymentID)
+	if err != nil { return }
+	if s.webhookSvc != nil {
+		s.webhookSvc.DeliverEvent(eventType, paymentID, map[string]interface{}{
+			"payment_id":      order.PaymentID,
+			"status":          string(order.Status),
+			"source_currency": order.SourceCurrency,
+			"target_currency": order.TargetCurrency,
+			"source_amount":   order.SourceAmount,
+			"target_amount":   order.TargetAmount,
+			"fee_amount":      order.FeeAmount,
+		})
+	}
 }
 
 func (s *PaymentService) compensateInReverse(paymentID string, completedIndices []int, steps []sagaStep) {

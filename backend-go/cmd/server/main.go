@@ -85,7 +85,11 @@ func main() {
 	chainSvc := service.NewChainService(db)
 	userSvc := service.NewUserService(db, jwtMgr)
 
-	paymentSvc := service.NewPaymentService(db, kycSvc, riskSvc, fxSvc, settlementSvc, chainSvc)
+	// V3: Notification + Webhook services
+	notifSvc := service.NewNotificationService(db)
+	webhookSvc := service.NewWebhookService(db)
+
+	paymentSvc := service.NewPaymentService(db, kycSvc, riskSvc, fxSvc, settlementSvc, chainSvc, notifSvc, webhookSvc)
 
 	// Card Payment Subsystem (§5.1)
 	cardSvc := service.NewCardService(db, fxSvc)
