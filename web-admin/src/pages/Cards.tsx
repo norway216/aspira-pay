@@ -65,7 +65,7 @@ export default function Cards() {
   const cardGradient = (c: any) => {
     if (c.card_network === 'MASTERCARD') return 'from-orange-600 via-red-500 to-yellow-500'
     if (c.card_network === 'UNIONPAY') return 'from-blue-600 via-cyan-500 to-teal-400'
-    return 'from-emerald-700 via-teal-600 to-cyan-500' // VISA / default
+    return 'from-emerald-700 via-teal-600 to-[#E07373]' // VISA / default
   }
 
   if (error && !cards.length) {
@@ -139,7 +139,7 @@ export default function Cards() {
           </div>
           <button onClick={() => getQuote(quoteCardId)}
             disabled={!quoteCardId || !quoteAmount}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm disabled:opacity-50">
+            className="px-4 py-2 bg-[#C84B4B] hover:bg-[#8B2E2E] rounded-lg text-sm disabled:opacity-50">
             Calculate
           </button>
         </div>

@@ -85,7 +85,7 @@ export default function UserCards({ userId, token }: { userId: string; token: st
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {cards.map((c: any) => (
           <div key={c.card_id} className="relative">
-            <div className={`rounded-2xl p-6 bg-gradient-to-br ${c.card_network === 'MASTERCARD' ? 'from-orange-600 via-red-500 to-yellow-500' : 'from-emerald-700 via-teal-600 to-cyan-500'} shadow-lg min-h-[180px] flex flex-col justify-between`}>
+            <div className={`rounded-2xl p-6 bg-gradient-to-br ${c.card_network === 'MASTERCARD' ? 'from-orange-600 via-red-500 to-yellow-500' : 'from-emerald-700 via-teal-600 to-[#E07373]'} shadow-lg min-h-[180px] flex flex-col justify-between`}>
               <div className="flex justify-between items-start">
                 <div><p className="text-white/60 text-xs uppercase tracking-widest">Aspira Pay</p><p className="text-white/50 text-[10px]">{c.card_type} · {c.card_form}</p></div>
                 <span className="text-white/80 text-lg font-bold italic">{c.card_network}</span>

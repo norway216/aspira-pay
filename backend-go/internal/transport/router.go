@@ -36,6 +36,9 @@ func SetupRouter(cfg *RouterConfig) *gin.Engine {
 	r.Use(middleware.CORS())
 	r.Use(middleware.AuditLog())
 	r.Use(middleware.Recovery())
+	r.Use(middleware.SecurityHeaders())
+	r.Use(middleware.MaxBodySize(1 << 20)) // 1MB
+	r.Use(middleware.ValidateContentType())
 	r.Use(middleware.RateLimit(100000, 60)) // High limit for Sandbox benchmarking
 
 	// Health check
@@ -107,6 +110,7 @@ func SetupRouter(cfg *RouterConfig) *gin.Engine {
 			// Accounts (with FX conversion to user preferred currency)
 			acctH := NewAccountHandler(cfg.DB, cfg.FXSvc)
 			protected.GET("/accounts", acctH.GetMyAccounts)
+			protected.GET("/accounts/total-usd", acctH.GetTotalUSDBalance)
 
 		// V4 Transfer + Payment Links (§5, §6)
 		if cfg.TransferSvc != nil {

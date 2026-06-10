@@ -94,6 +94,8 @@ func main() {
 	// Card Payment Subsystem (§5.1)
 	cardSvc := service.NewCardService(db, fxSvc)
 	adminSvc := service.NewAdminService(db)
+	activitySvc := service.NewActivityService(db)
+	_ = service.NewTransactionOrchestrator(db, activitySvc)
 	transferSvc := service.NewTransferService(db, fxSvc, riskSvc)
 
 	log.Println("All services initialized")

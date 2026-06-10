@@ -38,7 +38,7 @@ export default function UserPayments({ userId, token }: { userId: string; token:
     if (s === 'CLOSED' || s === 'COMPLETED' || s === 'PAYMENT_CONFIRMED') return 'text-green-400'
     if (s?.includes('FAILED') || s?.includes('REJECTED')) return 'text-red-400'
     if (s === 'CANCELLED' || s === 'REFUNDED') return 'text-yellow-400'
-    return 'text-blue-400'
+    return 'text-[#E07373]'
   }
 
   return (
@@ -46,7 +46,7 @@ export default function UserPayments({ userId, token }: { userId: string; token:
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold">Payments</h2>
         <button onClick={() => setShowNew(!showNew)}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium transition-colors">+ New Payment</button>
+          className="px-4 py-2 bg-[#C84B4B] hover:bg-[#8B2E2E] rounded-lg text-sm font-medium transition-colors">+ New Payment</button>
       </div>
 
       {showNew && (
@@ -60,7 +60,7 @@ export default function UserPayments({ userId, token }: { userId: string; token:
               <div><label className="block text-sm text-gray-400 mb-1">To</label><select value={form.target_currency} onChange={e => setForm({...form, target_currency: e.target.value})} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white"><option>EUR</option><option>USD</option><option>GBP</option><option>JPY</option></select></div>
               <div><label className="block text-sm text-gray-400 mb-1">Amount</label><input type="number" step="0.01" value={form.source_amount||''} onChange={e => setForm({...form, source_amount: parseFloat(e.target.value)||0})} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white" required /></div>
             </div>
-            <div className="flex gap-3"><button type="submit" className="px-6 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm">Send</button><button type="button" onClick={() => setShowNew(false)} className="px-6 py-2 bg-gray-700 rounded-lg text-sm">Cancel</button></div>
+            <div className="flex gap-3"><button type="submit" className="px-6 py-2 bg-[#C84B4B] hover:bg-[#8B2E2E] rounded-lg text-sm">Send</button><button type="button" onClick={() => setShowNew(false)} className="px-6 py-2 bg-gray-700 rounded-lg text-sm">Cancel</button></div>
           </form>
         </div>
       )}
