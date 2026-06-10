@@ -106,3 +106,36 @@ func BadgeAmount(amount int64, currency string) string {
 	major := float64(amount) / 100.0
 	return currency + " " + strconv.FormatFloat(major, 'f', 2, 64)
 }
+
+// GetTotalUSDBalance returns the total balance across all accounts converted to USD.
+func (h *AccountHandler) GetTotalUSDBalance(c *gin.Context) {
+	userID := c.GetString("user_id")
+	accounts, err := h.db.GetAccountsByUser(userID)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	if len(accounts) == 0 {
+		c.JSON(200, gin.H{"total_usd": 0, "has_accounts": false, "currencies": 0})
+		return
+	}
+
+	var totalUSD int64
+	currencyCount := 0
+	for _, a := range accounts {
+		if a.AvailableBalance <= 0 { continue }
+		currencyCount++
+		if a.Currency == "USD" {
+			totalUSD += a.AvailableBalance
+		} else {
+			usdAmount := h.fx.ConvertToUSD(a.Currency, a.AvailableBalance)
+			totalUSD += usdAmount
+		}
+	}
+
+	c.JSON(200, gin.H{
+		"total_usd":   totalUSD,
+		"has_accounts": true,
+		"currencies":   currencyCount,
+	})
+}

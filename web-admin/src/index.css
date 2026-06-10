@@ -3,9 +3,61 @@
 @tailwind utilities;
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-.bg-brand {
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+/* Brand colors (warm red palette matching logo) */
+:root {
+  --brand-primary: #C84B4B;
+  --brand-primary-light: #E07373;
+  --brand-primary-dark: #A13A3A;
+  --brand-accent: #E8A87C;
 }
+
+.bg-brand      { background: linear-gradient(135deg, #1a1214 0%, #221518 50%, #1c1114 100%); }
+.gradient-admin { background: linear-gradient(135deg, #2d1a1d 0%, #3d1f24 50%, #2d181c 100%); }
+.gradient-user  { background: linear-gradient(135deg, #231417 0%, #2b191d 50%, #1f1215 100%); }
+
+.card-visa       { background: linear-gradient(135deg, #3d1a1a 0%, #5c1e1e 30%, #7a2525 60%, #8b2e2e 100%); }
+.card-mastercard { background: linear-gradient(135deg, #3d1a1a 0%, #6b2a1a 30%, #9b3a1a 30%, #b8441a 100%); }
+.card-generic    { background: linear-gradient(135deg, #1e2029 0%, #2d2030 50%, #1e2029 100%); }
+
+/* Glass effect */
+.glass {
+  background: rgba(17, 25, 40, 0.75);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in { animation: fadeIn 0.3s ease-out; }
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 0.5rem;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+/* Focus ring */
+input:focus, select:focus, button:focus-visible { outline: none; }
+
+/* Number input arrows */
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }

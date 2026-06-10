@@ -12,6 +12,8 @@ import Login from './pages/Login'
 import UserDashboard from './pages/UserDashboard'
 import UserCards from './pages/UserCards'
 import UserPayments from './pages/UserPayments'
+import PaymentLinkLanding from './pages/PaymentLinkLanding'
+import FXRates from './pages/FXRates'
 import UserTransfer from './pages/UserTransfer'
 
 export default function App() {
@@ -48,6 +50,11 @@ export default function App() {
     </div>
   }
 
+  // V5: Payment link landing page (public, §5)
+  if (window.location.pathname.startsWith("/pay/")) {
+    return <PaymentLinkLanding />
+  }
+
   if (!auth) {
     return <Login onLogin={handleLogin} />
   }
@@ -70,6 +77,7 @@ export default function App() {
           <Route path="/transfer" element={<UserTransfer userId={auth.userId} token={auth.token} />} />
           <Route path="/cards" element={<UserCards userId={auth.userId} token={auth.token} />} />
           <Route path="/payments" element={<UserPayments userId={auth.userId} token={auth.token} />} />
+          <Route path="/fx" element={<FXRates />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Route>
       )}
