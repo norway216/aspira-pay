@@ -139,3 +139,4 @@ func (h *AccountHandler) GetTotalUSDBalance(c *gin.Context) {
 		"currencies":   currencyCount,
 	})
 }
+
